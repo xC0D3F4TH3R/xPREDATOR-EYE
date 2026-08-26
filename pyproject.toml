@@ -1,0 +1,80 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pcapanalyzer"
+version = "2.0.0"
+description = "Enterprise-grade real-time threat intelligence suite for network security"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.10"
+authors = [
+    {name = "xC0D3F4TH3R", email = "contact@xC0D3F4TH3R.dev"},
+]
+keywords = [
+    "security", "threat-intelligence", "pcap", "network-security",
+    "malware-analysis", "incident-response", "soc", "mitre-attack",
+    "behavioral-analysis", "real-time-monitoring", "cybersecurity",
+    "digital-forensics", "ioc", "threat-hunting", "edr",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Security",
+    "Topic :: System :: Networking :: Monitoring",
+    "Topic :: System :: Incident Management",
+]
+dependencies = [
+    "scapy>=2.5.0",
+    "psutil>=5.9.0",
+    "requests>=2.28.0",
+    "rich>=13.0.0",
+    "jinja2>=3.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.1.0",
+    "mypy>=1.5",
+]
+all = [
+    "pcapanalyzer[dev]",
+]
+
+[project.scripts]
+pcapanalyzer = "pcapanalyzer.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/xC0D3F4TH3R/xPREDATOR-EYE"
+Documentation = "https://github.com/xC0D3F4TH3R/xPREDATOR-EYE#readme"
+Repository = "https://github.com/xC0D3F4TH3R/xPREDATOR-EYE"
+Issues = "https://github.com/xC0D3F4TH3R/xPREDATOR-EYE/issues"
+Changelog = "https://github.com/xC0D3F4TH3R/xPREDATOR-EYE/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["pcapanalyzer*"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true

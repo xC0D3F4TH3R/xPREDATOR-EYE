@@ -1,0 +1,17 @@
+# PcapMalAnalyzer - Enterprise Threat Intelligence Suite
+# Python 3.10+ required
+
+# Packet parsing and live capture
+scapy==2.5.0
+
+# Process and system monitoring
+psutil==5.9.8
+
+# HTTP requests for external API lookups
+requests==2.31.0
+
+# Rich terminal output and real-time dashboard
+rich==13.7.0
+
+# Jinja2 for HTML report templating
+jinja2==3.1.3
