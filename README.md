@@ -1,430 +1,367 @@
-<p align="center">
-  <br>
-  <img src="https://img.shields.io/badge/VERSION-2.0.0-blue?style=for-the-badge" alt="version"/>
-  <img src="https://img.shields.io/badge/PYTHON-3.10+-yellow?style=for-the-badge&logo=python&logoColor=white" alt="python"/>
-  <img src="https://img.shields.io/badge/LICENSE-MIT-green?style=for-the-badge" alt="license"/>
-  <img src="https://img.shields.io/badge/STATUS-BETA-orange?style=for-the-badge" alt="status"/>
-  <img src="https://img.shields.io/badge/PRs-WELCOME-pink?style=for-the-badge" alt="prs"/>
-  <img src="https://img.shields.io/github/stars/xC0D3F4TH3R/xPREDATOR-EYE?style=for-the-badge&color=yellow" alt="stars"/>
-  <img src="https://img.shields.io/github/forks/xC0D3F4TH3R/xPREDATOR-EYE?style=for-the-badge" alt="forks"/>
-</p>
+# xPREDATOR-EYE
 
-<h1 align="center">
-  <br>
-  <img src="https://img.shields.io/badge/%F0%9F%94%B4%20xPREDATOR--EYE-2.0-red?style=for-the-badge&labelColor=black" alt="xPREDATOR-EYE"/>
-  <br>
-  Enterprise Threat Intelligence Suite
-  <br>
-</h1>
+![Version](https://img.shields.io/badge/version-3.0.0-blue)
+![Python](https://img.shields.io/badge/python-3.10%2B-green)
+![License](https://img.shields.io/badge/license-MIT-yellow)
+![Status](https://img.shields.io/badge/status-Production%20Ready-brightgreen)
 
-<p align="center">
-  Real-time network monitoring &bull; Behavioral analysis &bull; Threat actor profiling<br>
-  Damage assessment &bull; Automated response &bull; MITRE ATT&CK mapping
-</p>
+**Enterprise AI-Powered Threat Intelligence Suite for Network Security, Malware Analysis, and Incident Response**
 
-<p align="center">
-  <a href="#-features">Features</a> &bull;
-  <a href="#-architecture">Architecture</a> &bull;
-  <a href="#-quick-start">Quick Start</a> &bull;
-  <a href="#-usage">Usage</a> &bull;
-  <a href="#-detection">Detection</a> &bull;
-  <a href="#-contributing">Contributing</a> &bull;
-  <a href="#-license">License</a>
-</p>
+xPREDATOR-EYE is a production-grade, open-source security analysis platform designed for SOC analysts, incident responders, threat hunters, and digital forensics professionals. It combines real-time monitoring, deep packet inspection, behavioral analysis, ML classification, YARA scanning, LLM-powered analysis, and automated response — all in a single extensible toolkit.
 
----
+## Key Capabilities
 
-## Why xPREDATOR-EYE?
+| Capability | Description |
+|------------|-------------|
+| **PCAP Forensics** | 9-stage pipeline: ingestion → protocol parsing (DNS/HTTP/TLS/Credentials) → file carving → intelligence → behavioral analysis → threat actor profiling → damage assessment → alerting → response |
+| **Real-Time Monitoring** | Live packet capture (tshark), process monitoring (psutil), file integrity monitoring with cross-platform support |
+| **Behavioral Analysis** | 30+ detection rules mapping to MITRE ATT&CK, sequence correlation, kill chain mapping |
+| **Threat Actor Attribution** | 14 APT/group profiles (APT28, APT29, Lazarus, APT41, Sandworm, Turla, OilRig, Equation Group, Kimsuky, Volt Typhoon, FIN7, etc.) |
+| **YARA Scanning** | 15 default malware rules + custom rule support for carved files and memory artifacts |
+| **ML Classification** | XGBoost/Random Forest for traffic classification + Isolation Forest anomaly detection |
+| **LLM Analysis** | Local Ollama integration for malware explanation, executive summaries, remediation guidance |
+| **Professional Reports** | Government-grade PDF (classification banners, MITRE heatmaps, NIST/ISO mapping) + Interactive HTML (Plotly charts, IOC export) |
+| **SIEM Integration** | Elasticsearch, Splunk HEC, STIX 2.1/TAXII, MISP export |
+| **Zeek/Suricata** | Native log parsing (conn.log, dns.log, http.log, ssl.log, EVE.json) |
 
-Most security tools do **one thing**. xPREDATOR-EYE does **everything** in a single, unified pipeline:
+## Installation
 
-```
-  NETWORK ──┐                    ┌── Behavioral Analysis
-  PROCESS ──┼── Real-Time ──►    ├── Threat Actor Profiling
-  FILE    ──┘    Capture         ├── Damage Assessment
-                                 ├── Live Alert System
-                                 ├── Automated Response
-                                 └── Structured Reports
+```bash
+# Core dependencies
+pip install -e .
+
+# With optional features
+pip install -e ".[yara,ml,pdf,siem,llm,stix,config]"
+
+# All features
+pip install -e ".[all]"
+
+# Development
+pip install -e ".[dev]"
 ```
 
-Built for **SOC analysts**, **incident responders**, **threat hunters**, and **malware analysts** who need a single tool that watches, thinks, predicts, and acts.
+### System Requirements
 
----
+- **Python 3.10+**
+- **libpcap/Npcap** (for live capture)
+- **GTK/Pango** (for WeasyPrint PDF generation, optional)
+- **Ollama** (for LLM features, optional)
 
-## Features
+```bash
+# Ubuntu/Debian
+sudo apt install libpcap-dev libgirepository1.0-dev libcairo2-dev libpango1.0-dev
 
-<table>
-<tr>
-<td width="50%">
+# Windows (via Chocolatey)
+choco install npcap
 
-### Live Monitoring
-- Real-time packet capture via **tshark**
-- Cross-platform **process monitoring** (psutil)
-- **File integrity** baseline monitoring
-- Auto-detection of network interfaces
+# macOS
+brew install libpcap cairo pango gobject-introspection
+```
 
-</td>
-<td width="50%">
+## Quick Start
 
-### Behavioral Intelligence
-- **8 detection rules** with event correlation
-- **MITRE ATT&CK** tactic/technique mapping
-- **Kill Chain** phase progression tracking
-- Anomaly detection with scoring
+### Offline PCAP Analysis
 
-</td>
-</tr>
-<tr>
-<td>
+```bash
+# Basic analysis
+xpredator-eye analyze capture.pcap
 
-### Threat Actor Profiling
-- TTP-based **attribution engine**
-- Known actor fingerprints: APT28, APT29, Lazarus, ransomware, cryptominers
-- Campaign aggregation and tracking
-- Confidence-scored attribution
+# Full analysis with all features
+xpredator-eye analyze malware.pcap \
+  --yara-rules detection/rules/malware.yar \
+  --pdf report.pdf \
+  --html report.html \
+  --stix iocs.stix \
+  --llm \
+  --siem-url http://elasticsearch:9200 \
+  --classification "CONFIDENTIAL // INTERNAL USE ONLY"
+```
 
-</td>
-<td>
+### Real-Time Monitoring
 
-### Damage Assessment
-- **CIA triad** impact scoring
-- Blast radius calculation
-- Lateral movement detection
-- Data exfiltration assessment
-- Financial impact estimation
+```bash
+# Live monitoring with all sensors
+xpredator-eye live --interface Ethernet \
+  --yara-rules detection/rules/ \
+  --pdf exit_report.pdf \
+  --respond --dry-run
 
-</td>
-</tr>
-<tr>
-<td>
+# Monitor specific directories
+xpredator-eye live --watch-paths /tmp /var/tmp /home/user/Downloads \
+  --blocklist iocs.json
+```
 
-### Real-Time Alerts
-- Rate-limited, deduplicated alerts
-- JSONL persistence for SIEM ingestion
-- Alert correlation into **incident clusters**
-- Priority-based escalation
+## CLI Reference
 
-</td>
-<td>
+### `analyze` Mode
 
-### Automated Response
-- **10 containment actions** across Windows/Linux/macOS
-- 4 pre-built **response playbooks**
-- Dry-run safety (default)
-- Forensic evidence capture
+```bash
+xpredator-eye analyze <pcap_file> [options]
 
-</td>
-</tr>
-</table>
+Options:
+  -o, --output PATH         Output directory (default: ~/.xpredator-eye/output)
+  --blocklist PATH          IOC blocklist JSON file
+  --respond                 Generate automated response plan
+  --respond-execute         Execute response commands (requires confirmation)
+  --quiet                   Suppress output except final summary
+  --yara-rules PATH         YARA rules file or directory
+  --ml-model PATH           Pre-trained ML model (.pkl)
+  --pdf PATH                Generate PDF report
+  --html PATH               Generate interactive HTML report
+  --stix PATH               Export IOCs as STIX 2.1 bundle
+  --siem-url URL            Elasticsearch URL for SIEM push
+  --llm                     Enable LLM-powered analysis
+  --llm-model NAME          Ollama model (default: llama3.2:3b)
+  --classification STR      Report classification banner
+```
 
----
+### `live` Mode
+
+```bash
+xpredator-eye live [options]
+
+Options:
+  -i, --interface NAME      Network interface to capture on
+  -f, --filter BPF          Capture filter (BPF syntax)
+  -o, --output PATH         Output directory
+  --watch-paths DIRS        Directories to watch for file changes
+  --blocklist PATH          IOC blocklist JSON
+  --respond                 Enable automated response
+  --dry-run                 Dry-run response actions (default: true)
+  --quiet                   Suppress dashboard output
+  --yara-rules PATH         YARA rules for live scanning
+  --pdf PATH                Generate PDF report on exit
+```
 
 ## Architecture
 
 ```
-xPREDATOR-EYE
-│
-├── capture/                          LIVE MONITORING ENGINES
-│   ├── live_capture.py          ◄── tshark streaming integration
-│   ├── process_monitor.py       ◄── psutil cross-platform process tracking
-│   └── file_monitor.py          ◄── Baseline-diff file integrity monitoring
-│
-├── analysis/                         INTELLIGENCE ENGINES
-│   ├── behavior_engine.py       ◄── Event correlation + MITRE/Kill Chain mapping
-│   ├── threat_actor.py          ◄── TTP-based attribution + campaign tracking
-│   └── damage_assessor.py       ◄── CIA impact + blast radius + exfil scoring
-│
-├── core/                             COORDINATION LAYER
-│   ├── alert_system.py          ◄── Real-time alerting + dedup + correlation
-│   ├── orchestrator.py          ◄── Master pipeline connecting all engines
-│   └── response_engine.py       ◄── Platform-specific containment + playbooks
-│
-├── ui/
-│   └── dashboard.py             ◄── Real-time Rich terminal dashboard
-│
-├── [offline analysis]                STATIC PCAP FORENSICS
-│   ├── ingestion.py             ◄── PCAP validation + flow extraction
-│   ├── parser.py                ◄── DNS/HTTP/TLS/credential parsing
-│   ├── extractor.py             ◄── Stream reassembly + file carving
-│   └── intelligence.py          ◄── IOC matching + VT/AbuseIPDB
-│
-└── reporter.py                       JSON + terminal report generation
+xPREDATOR-EYE/
+├── pcapanalyzer/
+│   ├── cli.py                 # Main entry point
+│   ├── config.py              # Configuration constants
+│   ├── models.py              # Domain models (dataclasses)
+│   ├── utils.py               # Logging, helpers
+│   ├── ingestion.py           # PCAP validation, flow extraction
+│   ├── parser.py              # DNS, HTTP, TLS, credential parsing
+│   ├── extractor.py           # File carving from streams
+│   ├── intelligence.py        # IOC extraction + threat intel
+│   ├── reporter.py            # Terminal/JSON reporting
+│   ├── detection/
+│   │   ├── yara_scanner.py    # YARA rule compilation/scanning
+│   │   └── rules/malware.yar  # 15 default malware rules
+│   ├── ml/
+│   │   ├── feature_extractor.py  # 22 network flow features
+│   │   └── classifier.py         # XGBoost + Isolation Forest
+│   ├── reporting/
+│   │   ├── pdf_report.py      # WeasyPrint PDF generation
+│   │   └── html_report.py     # Plotly interactive HTML
+│   ├── integrations/
+│   │   ├── siem_integration.py # Elasticsearch, Splunk, STIX
+│   │   ├── zeek_parser.py     # Zeek log parsing
+│   │   └── suricata_parser.py # Suricata EVE.json
+│   ├── analysis/
+│   │   ├── behavior_engine.py # 30+ sequence rules
+│   │   ├── threat_actor.py    # 14 APT profiles
+│   │   ├── damage_assessor.py # 4-vector damage scoring
+│   │   └── llm_analyzer.py    # Ollama LLM integration
+│   ├── core/
+│   │   ├── orchestrator.py    # Live mode coordinator
+│   │   ├── alert_system.py    # Alerting with dedup/rate-limit
+│   │   └── health_monitor.py  # Engine health checks
+│   ├── capture/
+│   │   ├── live_capture.py    # tshark wrapper
+│   │   ├── process_monitor.py # psutil process tracking
+│   │   └── file_monitor.py    # File integrity monitoring
+│   └── response/
+│       └── response_engine.py # Safe command generation/execution
+├── config.yaml                # Runtime configuration
+├── pyproject.toml             # Package metadata + optional deps
+└── requirements.txt           # Core dependencies
 ```
-
-**Data Flow:**
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────────┐
-│  CAPTURE    │────▶│  BEHAVIOR    │────▶│  ALERT SYSTEM   │
-│  (network,  │     │  ENGINE      │     │  (dedup, rate   │
-│   process,  │     │  (correlate, │     │   limit, group) │
-│   files)    │     │   score)     │     └────────┬────────┘
-└─────────────┘     └──────┬───────┘              │
-                           │                      ▼
-                    ┌──────▼───────┐     ┌─────────────────┐
-                    │  THREAT      │     │  RESPONSE       │
-                    │  ACTOR       │     │  ENGINE         │
-                    │  PROFILER    │     │  (contain,      │
-                    └──────┬───────┘     │   respond)      │
-                           │             └─────────────────┘
-                    ┌──────▼───────┐
-                    │  DAMAGE      │
-                    │  ASSESSOR    │
-                    └──────────────┘
-```
-
----
-
-## Quick Start
-
-### Installation
-
-```bash
-# Clone the repository
-git clone https://github.com/xC0D3F4TH3R/xPREDATOR-EYE.git
-cd xPREDATOR-EYE
-
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate       # Linux/macOS
-venv\Scripts\activate          # Windows
-
-# Install
-pip install -e .
-
-# Or just install dependencies
-pip install -r requirements.txt
-```
-
-### Docker
-
-```bash
-docker build -t xpredator-eye .
-docker run -it xpredator-eye live --interface eth0
-```
-
-### First Run
-
-```bash
-# List available network interfaces
-python -m pcapanalyzer live --interfaces
-
-# Start live monitoring
-python -m pcapanalyzer live
-
-# Analyze a PCAP file
-python -m pcapanalyzer analyze capture.pcap
-```
-
----
-
-## Usage
-
-### Live Monitoring Mode
-
-```bash
-# Basic monitoring with auto-detected interface
-python -m pcapanalyzer live
-
-# Specific interface with BPF filter
-python -m pcapanalyzer live -i "Ethernet" -f "tcp port 443"
-
-# Monitor with file integrity watching
-python -m pcapanalyzer live --watch-paths /etc /tmp /var/log
-
-# Time-limited monitoring with verbose logging
-python -m pcapanalyzer live --duration 300 -v
-
-# Enable automated response (CAUTION: executes real commands)
-python -m pcapanalyzer live --respond
-
-# With local blocklist
-python -m pcapanalyzer live -b blocklist.json
-```
-
-### Static PCAP Analysis
-
-```bash
-# Full 9-stage analysis pipeline
-python -m pcapanalyzer analyze suspicious.pcap
-
-# With response plan generation
-python -m pcapanalyzer analyze suspicious.pcap --respond -o results/
-
-# With external API enrichment
-export VIRUSTOTAL_API_KEY=your_key
-export ABUSEIPDB_API_KEY=your_key
-python -m pcapanalyzer analyze suspicious.pcap
-
-# JSON-only output for SIEM ingestion
-python -m pcapanalyzer analyze suspicious.pcap --json-only -q
-```
-
-### CLI Reference
-
-| Flag | Description |
-|------|-------------|
-| `live` | Enter real-time monitoring mode |
-| `analyze` | Enter static PCAP analysis mode |
-| `-i, --interface` | Network interface for live capture |
-| `-f, --filter` | BPF capture filter expression |
-| `-o, --output-dir` | Output directory |
-| `-b, --blocklist` | Local JSON blocklist path |
-| `--watch-paths` | Filesystem paths to monitor |
-| `--respond` | Enable automated response |
-| `--no-intel` | Skip external API enrichment |
-| `--duration` | Monitoring duration (seconds) |
-| `--json-only` | JSON report only |
-| `--interfaces` | List network interfaces |
-| `-v, --verbose` | DEBUG logging |
-| `-q, --quiet` | Suppress terminal output |
-
----
-
-## Detection Capabilities
-
-### Behavioral Patterns
-
-| Pattern | Kill Chain Phase | MITRE Tactic |
-|---------|-----------------|--------------|
-| Suspicious Process + Network Connection | Installation / C2 | Execution / C2 |
-| Credential Access + Lateral Movement | Exploitation / Actions | Credential Access / Lateral Movement |
-| File Write + Process Creation | Installation | Persistence / Execution |
-| DNS Tunneling (rapid high-entropy queries) | C2 | C2 |
-| Data Staging + Exfiltration | Actions on Objectives | Collection / Exfiltration |
-| Reconnaissance Activity | Reconnaissance | Discovery |
-| Binary Masquerading | Installation | Defense Evasion |
-| Privilege Escalation Pattern | Exploitation | Privilege Escalation |
-
-### Threat Actor Attribution
-
-| Actor | Aliases | Motivation | Sophistication |
-|-------|---------|------------|----------------|
-| APT28 | Fancy Bear, Sofacy, Pawn Storm | Espionage | Expert |
-| APT29 | Cozy Bear, The Dukes, YTTRIUM | Espionage | Expert |
-| Lazarus Group | HIDDEN COBRA, Zinc | Financial | Advanced |
-| Ransomware Operators | REvil, Conti, LockBit, BlackCat | Financial | Advanced |
-| Crypto Miners | CoinMiner, Cryptoloot | Financial | Intermediate |
-
-### Response Playbooks
-
-| Playbook | Trigger | Actions |
-|----------|---------|---------|
-| Ransomware Response | ransomware, encryption | Isolate, Capture, Notify, Report |
-| C2 Communication | c2, beacon | Capture, Enable Logging, Report |
-| Credential Theft | credential, password, hash_dump | Capture, Reset, Enable Logging, Report |
-| Data Exfiltration | exfiltration, data_loss | Block, Capture, Report |
-
----
-
-## Output Formats
-
-### JSON Report
-```json
-{
-  "report_metadata": { "tool": "xPREDATOR-EYE", "version": "2.0.0" },
-  "behavioral_profile": { "behavioral_score": 0.82, "patterns": [...] },
-  "threat_actors": [{ "aliases": ["APT28"], "attribution_confidence": 0.73 }],
-  "damage_assessment": { "overall_score": 65.0, "severity": "high" },
-  "alerts": [...],
-  "response_plan": { "commands": [...] }
-}
-```
-
-### Terminal Dashboard
-```
-┌─────────────────────────────┬──────────────────────────────┐
-│ Statistics                  │ Threat Scores                │
-│ Packets: 142,847            │ Behavioral: ████████░░ 82%   │
-│ Events:  3,291              │ Damage:    ██████░░░░ 65%    │
-│ Alerts:  7 (2 CRITICAL)     │                              │
-├─────────────────────────────┴──────────────────────────────┤
-│ Recent Alerts                                             │
-│ 14:32:01  CRITICAL  Suspicious Process + Network          │
-│ 14:31:58  HIGH      Credential Access + Lateral Movement  │
-│ 14:31:45  MEDIUM    DNS Tunneling Pattern                 │
-└───────────────────────────────────────────────────────────┘
-```
-
-### Alert Log (JSONL for SIEM)
-```json
-{"alert_id":"a3f2c1","priority":"CRITICAL","title":"Suspicious Process + Network","src_ip":"10.0.1.50","dst_ip":"185.234.72.18"}
-```
-
----
 
 ## Configuration
 
-All thresholds and detection rules are centralized in `config.py`:
+Copy `config.yaml` to `~/.xpredator-eye/config.yaml` and customize:
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `PROCESS_POLL_INTERVAL` | 2.0s | Process snapshot interval |
-| `FILE_MONITOR_INTERVAL` | 5.0s | File integrity check interval |
-| `BEHAVIOR_SEQUENCE_WINDOW` | 300s | Event correlation window |
-| `BEHAVIOR_SCORE_SUSPICIOUS` | 0.4 | Threshold for suspicious alerts |
-| `BEHAVIOR_SCORE_MALICIOUS` | 0.7 | Threshold for malicious alerts |
-| `ALERT_MAX_PER_MINUTE` | 60 | Alert rate limit |
-| `DNS_ENTROPY_THRESHOLD` | 3.5 | DGA detection threshold |
-| `RESPONSE_DRY_RUN_DEFAULT` | True | Safe mode for response commands |
+```yaml
+general:
+  log_level: INFO
+  output_dir: ~/.xpredator-eye/output
 
----
+capture:
+  snaplen: 65535
+  buffer_size: 134217728
+
+behavioral:
+  sequence_window: 300
+  suspicious_threshold: 0.4
+
+ml:
+  model_path: ~/.xpredator-eye/models/classifier.pkl
+
+yara:
+  rules_dir: ~/.xpredator-eye/rules
+
+llm:
+  enabled: false
+  model: llama3.2:3b
+  ollama_url: http://localhost:11434
+
+siem:
+  elasticsearch:
+    enabled: false
+    hosts: ["http://localhost:9200"]
+```
+
+## MITRE ATT&CK Coverage
+
+xPREDATOR-EYE detects patterns across all 14 MITRE tactics:
+
+| Tactic | Techniques Detected |
+|--------|---------------------|
+| Initial Access | T1190, T1566 |
+| Execution | T1059, T1059.001, T1218 |
+| Persistence | T1053, T1547, T1547.001, T1574.002 |
+| Privilege Escalation | T1068, T1055, T1068 |
+| Defense Evasion | T1036, T1027, T1070, T1564, T1218 |
+| Credential Access | T1003, T1003.001, T1558.003 |
+| Discovery | T1046, T1018, T1087 |
+| Lateral Movement | T1021, T1021.002, T1047, T1550.002 |
+| Collection | T1074, T1074.001, T1560 |
+| C2 | T1071, T1071.004, T1573, T1573.002 |
+| Exfiltration | T1041, T1048.003 |
+| Impact | T1486, T1490, T1496 |
+
+## Threat Actor Profiles (14)
+
+- **APT28 (Fancy Bear)** — Espionage, Expert
+- **APT29 (Cozy Bear)** — Espionage, Expert  
+- **Lazarus Group** — Financial, Advanced
+- **APT41 (Double Dragon)** — Espionage, Expert
+- **APT40 (Leviathan)** — Espionage, Advanced
+- **FIN7 (Carbanak)** — Financial, Advanced
+- **Sandworm Team** — Destructive, Expert
+- **Turla (Snake/Uroburos)** — Espionage, Innovator
+- **OilRig (APT34)** — Espionage, Advanced
+- **Equation Group** — Espionage, Innovator
+- **Kimsuky** — Espionage, Advanced
+- **Volt Typhoon** — Espionage, Advanced
+- **Ransomware Operator (Generic)** — Financial, Advanced
+- **Crypto Miner** — Financial, Intermediate
+
+## Output Formats
+
+### Terminal Report
+Real-time colored output with tables, severity summaries, and key findings.
+
+### JSON Report (`analysis_report.json`)
+Machine-readable complete analysis for automation pipelines.
+
+### PDF Report (`--pdf`)
+- Classification banners (UNCLASSIFIED, FOUO, CUI, CONFIDENTIAL, SECRET)
+- Executive summary + technical details + appendices
+- MITRE ATT&CK Navigator heatmap (SVG)
+- NIST CSF 2.0 / ISO 27001 / SOC 2 / PCI DSS / HIPAA compliance mapping
+- Severity distribution charts, timeline, kill chain progression
+
+### HTML Report (`--html`)
+- Self-contained single-file with embedded Plotly.js
+- Interactive charts (click to filter, hover for details)
+- Searchable/filterable IOC tables
+- One-click JSON/CSV IOC export
+- Collapsible sections, responsive design
+
+### STIX 2.1 Bundle (`--stix`)
+Standardized IOC export for MISP, TAXII, OpenCTI, ThreatConnect.
+
+## SIEM Integration
+
+### Elasticsearch
+```bash
+xpredator-eye analyze capture.pcap --siem-url http://es:9200
+```
+Pushes alerts, IOCs, behavioral events with pre-built index templates.
+
+### Splunk HEC
+```bash
+xpredator-eye analyze capture.pcap --siem-url https://splunk:8088 --siem-token <HEC_TOKEN>
+```
+CIM-compliant events for Splunk Enterprise Security.
+
+## LLM-Powered Analysis
+
+Requires [Ollama](https://ollama.ai) running locally:
+
+```bash
+ollama pull llama3.2:3b
+xpredator-eye analyze capture.pcap --llm --llm-model llama3.2:3b
+```
+
+Generates:
+- Executive summary in plain language
+- IOC context and threat actor context
+- Prioritized remediation steps
+- Custom YARA rule suggestions from observed patterns
+
+## Response Engine Safety
+
+All commands default to **dry-run mode**. Explicit `--respond-execute` required for actual execution.
+
+```bash
+# Dry-run (safe)
+xpredator-eye analyze capture.pcap --respond
+
+# Actual execution (requires confirmation)
+xpredator-eye analyze capture.pcap --respond --respond-execute
+```
+
+Supported actions: `block_ip`, `block_domain`, `block_port`, `kill_process`, `quarantine_file`, `isolate_host`, `capture_forensics`, `notify_admin`, `enable_logging`.
+
+## Development
+
+```bash
+# Run tests
+pytest tests/ -v --cov=pcapanalyzer
+
+# Lint
+ruff check .
+
+# Type check
+mypy pcapanalyzer
+
+# Security scan
+bandit -r pcapanalyzer
+```
 
 ## Contributing
 
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for:
-
-- Development setup
-- Adding detection rules
-- Adding response playbooks
-- PR guidelines and commit conventions
-
-**Quick contribution ideas:**
-- Add new MITRE ATT&CK detection patterns
-- Create response playbooks for specific threat types
-- Add threat actor fingerprints for your region/industry
-- Improve platform-specific commands
-- Write tests for any module
-- Improve documentation
-
----
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for responsible disclosure guidelines.
-
-**Never run automated response (`--respond`) on production systems without understanding the commands.**
-
----
-
-## Roadmap
-
-- [ ] HTML/PDF report export
-- [ ] Elasticsearch/SIEM output integration
-- [ ] YARA rule integration
-- [ ] Sigma rule generation
-- [ ] Zeek/Suricata log correlation
-- [ ] Web dashboard (Flask/FastAPI)
-- [ ] VirusTotal bulk hash lookup
-- [ ] MISP integration
-- [ ] Automated PCAP download from case management
-- [ ] Memory forensics integration (Volatility)
-
----
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE) for details.
+
+## Citation
+
+If you use xPREDATOR-EYE in research or operations, please cite:
+
+```
+@software{xpredator-eye,
+  author = {xC0D3F4TH3R},
+  title = {xPREDATOR-EYE: Enterprise AI-Powered Threat Intelligence Suite},
+  version = {3.0.0},
+  url = {https://github.com/xC0D3F4TH3R/xPREDATOR-EYE},
+  year = {2026}
+}
+```
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/xC0D3F4TH3R/xPREDATOR-EYE/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/xC0D3F4TH3R/xPREDATOR-EYE/discussions)
+- **Security**: Report vulnerabilities privately via [security@xC0D3F4TH3R.dev](mailto:security@xC0D3F4TH3R.dev)
 
 ---
 
-<p align="center">
-  <b>Built for defenders, by defenders.</b><br>
-  <sub>Star this repo if it helps you protect your network.</sub>
-</p>
-
-<p align="center">
-  <a href="https://github.com/xC0D3F4TH3R/xPREDATOR-EYE/stargazers">
-    <img src="https://img.shields.io/github/stars/xC0D3F4TH3R/xPREDATOR-EYE?style=social" alt="Star xPREDATOR-EYE"/>
-  </a>
-</p>
+**Built for defenders, by defenders.** 🛡️
