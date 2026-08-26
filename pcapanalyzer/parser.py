@@ -16,11 +16,32 @@ from typing import Optional
 
 from scapy.all import (  # type: ignore[import-untyped]
     PcapReader, IP, IPv6, TCP, UDP, DNS, DNSQR, DNSRR,
-    Raw, HTTP,  # type: ignore[attr-defined]
-    TLS, TLSClientHello, TLSServerHello, TLSClientKeyExchange,  # type: ignore[attr-defined]
-    conf,
+    Raw, conf,
 )
-from scapy.layers.tls.handshake import TLS_Ext_ServerName  # type: ignore[import-untyped]
+try:
+    from scapy.layers.http import HTTP  # type: ignore[attr-defined]
+except ImportError:
+    try:
+        from scapy.all import HTTP  # type: ignore[attr-defined]
+    except ImportError:
+        HTTP = None  # type: ignore[assignment,misc]
+
+try:
+    from scapy.layers.tls.all import TLS, TLSClientHello, TLSServerHello  # type: ignore[attr-defined]
+except ImportError:
+    try:
+        from scapy.layers.tls.handshake import TLSClientHello, TLSServerHello  # type: ignore[attr-defined]
+        from scapy.layers.tls.record import TLS  # type: ignore[attr-defined]
+    except ImportError:
+        try:
+            from scapy.all import TLS, TLSClientHello, TLSServerHello  # type: ignore[attr-defined]
+        except ImportError:
+            TLS = TLSClientHello = TLSServerHello = None  # type: ignore[assignment,misc]
+
+try:
+    from scapy.layers.tls.handshake import TLS_Ext_ServerName  # type: ignore[import-untyped]
+except ImportError:
+    TLS_Ext_ServerName = None  # type: ignore[assignment,misc]
 
 from . import config
 from .models import (

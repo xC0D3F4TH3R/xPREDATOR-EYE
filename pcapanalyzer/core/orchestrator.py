@@ -8,6 +8,8 @@ intelligence matching, and response generation into a unified pipeline.
 
 from __future__ import annotations
 
+import platform
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -45,20 +47,27 @@ class Orchestrator:
     ) -> None:
         self.interface = interface
         self.capture_filter = capture_filter
-        self.watch_paths = watch_paths
+        self.watch_paths = watch_paths or []
         self.blocklist_path = blocklist_path
         self.dry_run = dry_run
         self.output_dir = output_dir or config.DEFAULT_OUTPUT_DIR
 
         self._result = AnalysisResult(analysis_start=datetime.now())
+
+        # Detect platform
+        sys_platform = platform.system().lower()
+        platform_map = {"windows": Platform.WINDOWS, "linux": Platform.LINUX,
+                        "darwin": Platform.MACOS}
+        detected = platform_map.get(sys_platform, Platform.ANY)
+
         self._monitor_session = MonitorSession(
-            platform=Platform.ANY,
+            platform=detected,
             started_at=datetime.now(),
             interfaces=[interface] if interface else [],
         )
         self._result.monitor_session = self._monitor_session
 
-        # Lazy-init engines
+        # Engines - initialized on start()
         self._capture_engine = None
         self._process_monitor = None
         self._file_monitor = None
@@ -71,233 +80,283 @@ class Orchestrator:
         self._dashboard = None
 
         self._running = False
+        self._analysis_thread: Optional[threading.Thread] = None
 
     def _init_engines(self) -> None:
-        """Initialize all sub-engines."""
-        from ..capture.live_capture import LiveCaptureEngine
-        from ..capture.process_monitor import ProcessMonitor
-        from ..capture.file_monitor import FileMonitor
-        from ..analysis.behavior_engine import BehaviorEngine
-        from ..analysis.threat_actor import ThreatActorProfiler
-        from ..analysis.damage_assessor import DamageAssessor
-        from ..analysis.behavior_engine import BehaviorEngine
-        from ..core.alert_system import AlertSystem
-        from ..response.response_engine import ResponseEngine
-        from ..intelligence import IntelligenceEngine
-        from ..ui.dashboard import LiveDashboard
+        """Initialize all sub-engines with safe error handling."""
+        try:
+            from ..capture.live_capture import LiveCaptureEngine
+            self._capture_engine = LiveCaptureEngine(
+                interface=self.interface,
+                capture_filter=self.capture_filter,
+                output_dir=self.output_dir / "captures",
+            )
+            logger.info("LiveCaptureEngine initialized")
+        except Exception as exc:
+            logger.error("Failed to init LiveCaptureEngine: %s", exc)
 
-        self._capture_engine = LiveCaptureEngine(
-            interface=self.interface,
-            capture_filter=self.capture_filter,
-        )
-        self._process_monitor = ProcessMonitor()
-        self._file_monitor = FileMonitor()
-        self._behavior_engine = BehaviorEngine()
-        self._threat_profiler = ThreatActorProfiler()
-        self._damage_assessor = DamageAssessor()
-        self._alert_system = AlertSystem(output_dir=self.output_dir)
-        self._response_engine = ResponseEngine(dry_run=self.dry_run)
-        self._intelligence = IntelligenceEngine()
-        self._dashboard = LiveDashboard()
+        try:
+            from ..capture.process_monitor import ProcessMonitor
+            self._process_monitor = ProcessMonitor()
+            logger.info("ProcessMonitor initialized")
+        except Exception as exc:
+            logger.error("Failed to init ProcessMonitor: %s", exc)
 
-        if self.blocklist_path and self.blocklist_path.exists():
-            self._intelligence.load_blocklist(self.blocklist_path)
+        try:
+            from ..capture.file_monitor import FileMonitor
+            self._file_monitor = FileMonitor()
+            if self.watch_paths:
+                self._file_monitor.set_watch_paths(self.watch_paths)
+            else:
+                self._file_monitor.load_platform_defaults()
+            logger.info("FileMonitor initialized (%d paths)", len(self._file_monitor._watch_paths))
+        except Exception as exc:
+            logger.error("Failed to init FileMonitor: %s", exc)
 
-        # Wire alert callbacks
-        self._alert_system.register_callback(self._on_alert)
+        try:
+            from ..analysis.behavior_engine import BehaviorEngine
+            self._behavior_engine = BehaviorEngine()
+            logger.info("BehaviorEngine initialized")
+        except Exception as exc:
+            logger.error("Failed to init BehaviorEngine: %s", exc)
 
-    def _on_alert(self, alert: Alert) -> None:
-        """Callback for new alerts - update dashboard."""
-        if self._dashboard:
-            self._dashboard.update_alerts(self._alert_system.get_alerts())
+        try:
+            from ..analysis.threat_actor import ThreatActorProfiler
+            self._threat_profiler = ThreatActorProfiler()
+            logger.info("ThreatActorProfiler initialized")
+        except Exception as exc:
+            logger.error("Failed to init ThreatActorProfiler: %s", exc)
+
+        try:
+            from ..analysis.damage_assessor import DamageAssessor
+            self._damage_assessor = DamageAssessor()
+            logger.info("DamageAssessor initialized")
+        except Exception as exc:
+            logger.error("Failed to init DamageAssessor: %s", exc)
+
+        try:
+            from ..core.alert_system import AlertSystem
+            self._alert_system = AlertSystem(output_dir=self.output_dir)
+            logger.info("AlertSystem initialized")
+        except Exception as exc:
+            logger.error("Failed to init AlertSystem: %s", exc)
+
+        try:
+            from ..response.response_engine import ResponseEngine
+            self._response_engine = ResponseEngine(dry_run=self.dry_run)
+            logger.info("ResponseEngine initialized")
+        except Exception as exc:
+            logger.error("Failed to init ResponseEngine: %s", exc)
+
+        try:
+            from ..intelligence import IntelligenceEngine
+            self._intelligence = IntelligenceEngine()
+            if self.blocklist_path and self.blocklist_path.exists():
+                self._intelligence.load_blocklist(self.blocklist_path)
+            logger.info("IntelligenceEngine initialized")
+        except Exception as exc:
+            logger.error("Failed to init IntelligenceEngine: %s", exc)
+
+        try:
+            from ..ui.dashboard import LiveDashboard
+            self._dashboard = LiveDashboard()
+            self._dashboard.start()
+            logger.info("LiveDashboard initialized")
+        except Exception as exc:
+            logger.error("Failed to init LiveDashboard: %s", exc)
 
     def start(self) -> None:
-        """Start all monitoring engines."""
-        logger.info("=" * 70)
-        logger.info("  PcapMalAnalyzer - Live Threat Intelligence Suite")
-        logger.info("=" * 70)
+        """Start the full monitoring pipeline."""
+        if self._running:
+            logger.warning("Orchestrator already running")
+            return
 
         self._init_engines()
         self._running = True
 
-        # Start subsystems
-        self._process_monitor.start()
-        self._file_monitor.start()
-        self._dashboard.start()
+        # Start live capture
+        if self._capture_engine:
+            try:
+                self._capture_engine.start(filter=self.capture_filter)
+                logger.info("Live capture started")
+            except Exception as exc:
+                logger.error("Failed to start capture: %s", exc)
 
-        if self.watch_paths:
-            for p in self.watch_paths:
-                self._file_monitor.add_watch_path(p)
+        # Start process monitor
+        if self._process_monitor:
+            try:
+                self._process_monitor.start()
+                logger.info("Process monitor started")
+            except Exception as exc:
+                logger.error("Failed to start process monitor: %s", exc)
 
-        # Start capture (may fail if tshark unavailable)
-        try:
-            self._capture_engine.start(filter=self.capture_filter)
-            logger.info("Live capture active on %s", self.interface or "default interface")
-        except Exception as exc:
-            logger.warning("Live capture unavailable: %s", exc)
-            logger.info("Continuing with process and file monitoring only")
+        # Start file monitor
+        if self._file_monitor:
+            try:
+                self._file_monitor.start()
+                logger.info("File monitor started")
+            except Exception as exc:
+                logger.error("Failed to start file monitor: %s", exc)
 
-        logger.info("All engines active. Monitoring... (Ctrl+C to stop)")
+        # Start analysis loop
+        self._analysis_thread = threading.Thread(
+            target=self._analysis_loop, daemon=True, name="analysis-loop",
+        )
+        self._analysis_thread.start()
 
-        # Main monitoring loop
-        try:
-            self._monitoring_loop()
-        except KeyboardInterrupt:
-            logger.info("Interrupted by user")
-        finally:
-            self.stop()
+        logger.info("=== Orchestrator pipeline started ===")
 
-    def _monitoring_loop(self) -> None:
-        """Core loop: consume events from all sources, analyze, alert."""
-        analysis_interval = 10.0  # seconds between full analysis cycles
-        last_analysis = 0.0
-
+    def _analysis_loop(self) -> None:
+        """Periodic analysis cycle feeding events into behavioral engine."""
         while self._running:
             try:
-                now = time.monotonic()
-
-                # Consume live packets
-                if self._capture_engine and self._capture_engine.is_running:
-                    pkt_count = 0
-                    for pkt in self._capture_engine.packet_stream(timeout=0.5):
-                        self._behavior_engine.ingest_packet(pkt)
-                        pkt_count += 1
-                        self._monitor_session.packet_count += 1
-                    if self._dashboard:
-                        self._dashboard.update_packet_count(self._monitor_session.packet_count)
-
-                # Consume process events
-                if self._process_monitor:
-                    events = self._process_monitor.get_events()
-                    for ev in events:
-                        self._behavior_engine.ingest_system_event(ev)
-                        self._monitor_session.event_count += 1
-                    procs = list(self._process_monitor.get_snapshot().values())
-                    if self._dashboard:
-                        self._dashboard.update_processes(procs)
-
-                # Consume file events
-                if self._file_monitor:
-                    file_events = self._file_monitor.get_events()
-                    for ev in file_events:
-                        self._behavior_engine.ingest_system_event(ev)
-                        self._monitor_session.event_count += 1
-                    changes = self._file_monitor.get_changes()
-                    if self._dashboard:
-                        self._dashboard.update_file_changes(changes)
-
-                # Periodic full analysis
-                if now - last_analysis >= analysis_interval:
-                    self._run_analysis_cycle()
-                    last_analysis = now
-
-                if self._dashboard:
-                    self._dashboard.update_event_count(self._monitor_session.event_count)
-
+                self._run_analysis_cycle()
             except Exception as exc:
-                logger.error("Monitoring loop error: %s", exc)
-                time.sleep(1.0)
+                logger.error("Analysis cycle error: %s", exc)
+            time.sleep(config.BEHAVIOR_SEQUENCE_WINDOW / 6)
 
     def _run_analysis_cycle(self) -> None:
-        """Run behavioral analysis, profiling, damage assessment, and alerting."""
-        try:
-            # 1. Behavioral Analysis
-            profile = self._behavior_engine.analyze()
-            self._result.behavioral_profile = profile
+        """Execute one analysis cycle."""
+        if not self._behavior_engine:
+            return
 
+        # Ingest packets from capture
+        if self._capture_engine and self._capture_engine.is_running:
+            count = 0
+            for pkt in self._capture_engine.packet_stream(timeout=0.1):
+                self._behavior_engine.ingest_packet(pkt)
+                self._monitor_session.packet_count += 1
+                count += 1
+                if count > 500:
+                    break
             if self._dashboard:
-                self._dashboard.update_scores(
-                    behavioral=profile.behavioral_score,
-                )
+                self._dashboard.update_packet_count(self._monitor_session.packet_count)
 
-            # 2. Generate alerts from patterns
+        # Ingest file changes
+        if self._file_monitor:
+            changes = self._file_monitor.get_changes()
+            for fc in changes:
+                self._behavior_engine.ingest_file_change(fc)
+            if self._dashboard and changes:
+                self._dashboard.update_file_changes(changes)
+
+        # Ingest process snapshots
+        if self._process_monitor:
+            snapshot = self._process_monitor.get_latest_snapshot()
+            if snapshot:
+                self._behavior_engine.ingest_process_snapshot(snapshot)
+                procs = self._process_monitor.get_all_processes()
+                if self._dashboard and procs:
+                    self._dashboard.update_processes(procs)
+
+        self._monitor_session.event_count = self._behavior_engine.event_count
+
+        if self._dashboard:
+            self._dashboard.update_event_count(self._monitor_session.event_count)
+
+        # Run behavioral analysis
+        profile = self._behavior_engine.analyze()
+        self._result.behavioral_profile = profile
+
+        if self._dashboard:
+            self._dashboard.update_scores(
+                behavioral=profile.behavioral_score,
+                damage=0.0,
+            )
+
+        # Raise alerts for high-severity patterns
+        if self._alert_system:
             for pattern in profile.patterns:
                 alert = self._alert_system.alert_from_pattern(pattern)
                 self._alert_system.raise_alert(alert)
 
-            # 3. Threat Actor Profiling
-            if profile.patterns:
-                actor = self._threat_profiler.profile_from_behavior(profile)
-                if actor:
-                    self._result.threat_actors = self._threat_profiler.get_actors()
-
-            # 4. Damage Assessment
-            assessment = self._damage_assessor.assess(
-                profile=profile,
-                events=self._behavior_engine._event_window,
-                system_events=self._process_monitor.get_events() if self._process_monitor else None,
-                process_snapshots=list(self._process_monitor.get_snapshot().values()) if self._process_monitor else None,
-            )
-            self._result.damage_assessment = assessment
-
             if self._dashboard:
+                self._dashboard.update_alerts(self._alert_system.get_alerts())
+            self._monitor_session.alert_count = self._alert_system.alert_count
+
+        # Threat actor profiling
+        if self._threat_profiler and profile.patterns:
+            self._threat_profiler.profile_from_behavior(profile)
+            self._result.threat_actors = self._threat_profiler.get_actors()
+
+        # Damage assessment
+        if self._damage_assessor:
+            self._result.damage_assessment = self._damage_assessor.assess(
+                profile=profile,
+            )
+            if self._dashboard and self._result.damage_assessment:
                 self._dashboard.update_scores(
                     behavioral=profile.behavioral_score,
-                    damage=assessment.overall_score / 100.0,
+                    damage=self._result.damage_assessment.overall_score / 100.0,
                 )
-
-            # 5. Generate Response Plan if severity warrants it
-            critical_alerts = self._alert_system.get_alerts(min_priority=4)  # ERROR+
-            if critical_alerts:
-                plan = self._response_engine.generate_plan(
-                    critical_alerts, assessment,
-                )
-                self._result.response_plan = plan
-                logger.warning(
-                    "Response plan ready: %d commands (dry_run=%s)",
-                    len(plan.commands), self._response_engine.dry_run,
-                )
-
-        except Exception as exc:
-            logger.error("Analysis cycle error: %s", exc)
 
     def stop(self) -> None:
         """Stop all engines and generate final report."""
+        logger.info("Stopping orchestrator...")
         self._running = False
-        logger.info("Shutting down all engines...")
 
+        # Stop capture
+        pkt_count = 0
         if self._capture_engine:
-            self._capture_engine.stop()
+            pkt_count = self._capture_engine.stop()
+
+        # Stop monitors
         if self._process_monitor:
             self._process_monitor.stop()
+
         if self._file_monitor:
             self._file_monitor.stop()
+
         if self._dashboard:
             self._dashboard.stop()
 
-        self._result.analysis_end = datetime.now()
-        if self._result.analysis_start:
-            self._result.elapsed_seconds = (
-                self._result.analysis_end - self._result.analysis_start
-            ).total_seconds()
+        # Run final analysis
+        if self._behavior_engine:
+            profile = self._behavior_engine.analyze()
+            self._result.behavioral_profile = profile
 
-        # Correlate alerts
         if self._alert_system:
-            self._result.alert_groups = self._alert_system.correlate()
             self._result.alerts = self._alert_system.get_alerts()
-            self._monitor_session.alert_count = self._alert_system.alert_count
+            self._result.alert_groups = self._alert_system.correlate()
 
-        # Generate final report
-        self._generate_final_report()
+        if self._threat_profiler:
+            self._result.threat_actors = self._threat_profiler.get_actors()
+            self._result.campaigns = self._threat_profiler.get_campaigns()
 
-        logger.info("Orchestrator stopped. Session: %s", self._monitor_session.session_id)
+        if self._damage_assessor:
+            self._result.damage_assessment = self._damage_assessor.assess(
+                profile=self._result.behavioral_profile,
+            )
 
-    def _generate_final_report(self) -> None:
-        """Write the final JSON report and summary."""
-        from ..reporter import generate_json_report
-        from ..utils import ensure_directory
+        # Generate response plan
+        critical = [a for a in self._result.alerts if a.severity.numeric >= Severity.HIGH.numeric]
+        if critical and self._response_engine:
+            self._result.response_plan = self._response_engine.generate_plan(
+                critical, self._result.damage_assessment,
+            )
 
-        report_dir = self.output_dir / "reports"
-        ensure_directory(report_dir)
+        # Write final report
+        self._write_report()
 
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        json_path = report_dir / f"live_analysis_{ts}.json"
+        elapsed = (datetime.now() - self._result.analysis_start).total_seconds() if self._result.analysis_start else 0.0
+        self._result.elapsed_seconds = elapsed
+        self._monitor_session.active = False
 
+        logger.info("=== Orchestrator stopped (elapsed=%.1fs, packets=%d, alerts=%d) ===",
+                     elapsed, pkt_count, self._monitor_session.alert_count)
+
+    def _write_report(self) -> None:
+        """Write the final JSON report."""
         try:
-            generate_json_report(self._result, json_path)
-            logger.info("Final report: %s", json_path)
+            from ..reporter import generate_json_report
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            report_path = self.output_dir / "reports" / f"live_analysis_{ts}.json"
+            report_path.parent.mkdir(parents=True, exist_ok=True)
+            generate_json_report(self._result, report_path)
+            logger.info("Final report written: %s", report_path)
         except Exception as exc:
-            logger.error("Report generation failed: %s", exc)
+            logger.error("Failed to write report: %s", exc)
 
     def get_result(self) -> AnalysisResult:
+        """Return the current analysis result."""
         return self._result

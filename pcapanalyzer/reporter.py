@@ -35,8 +35,13 @@ console = Console()
 
 
 def _serialize(obj: Any) -> Any:
+    if obj is None:
+        return None
     if isinstance(obj, datetime):
         return obj.isoformat()
+    slots = getattr(type(obj), "__slots__", None)
+    if slots:
+        return {k: getattr(obj, k) for k in slots if not k.startswith("_")}
     if hasattr(obj, "__dict__"):
         return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
     if isinstance(obj, (set, frozenset)):
@@ -52,8 +57,8 @@ def generate_json_report(result: AnalysisResult, output_path: Path) -> Path:
 
     report: dict[str, Any] = {
         "report_metadata": {
-            "tool": "PcapMalAnalyzer",
-            "version": "1.0.0",
+            "tool": "xPREDATOR-EYE",
+            "version": "2.0.0",
             "generated_at": datetime.now().isoformat(),
             "elapsed_seconds": result.elapsed_seconds,
         },

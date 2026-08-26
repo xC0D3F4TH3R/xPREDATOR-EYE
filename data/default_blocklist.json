@@ -1,0 +1,26 @@
+{
+  "description": "Default IOC blocklist for xPREDATOR-EYE. Add known-bad indicators here.",
+  "ips": [
+    "185.234.72.18",
+    "103.224.182.251",
+    "45.33.32.156",
+    "198.51.100.1",
+    "203.0.113.50"
+  ],
+  "domains": [
+    "malware-c2.example.com",
+    "phishing-bait.example.net",
+    "evil-domain.example.org",
+    "cryptominer-pool.example.com",
+    "data-exfil.example.net"
+  ],
+  "md5_hashes": [],
+  "sha1_hashes": [],
+  "sha256_hashes": [],
+  "ja3_hashes": [],
+  "user_agents": [
+    "malicious-bot/1.0",
+    "exploit-kit/3.2",
+    "downloader/1.0"
+  ]
+}

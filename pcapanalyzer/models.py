@@ -390,6 +390,7 @@ class BehaviorEvent:
     mitre_tactic: Optional[MITRETactic] = None
     mitre_technique: str = ""
     kill_chain_phase: Optional[KillChainPhase] = None
+    severity: Severity = Severity.INFO
 
 
 @dataclass(slots=True)
@@ -574,7 +575,7 @@ class Alert:
     process_pid: int = 0
     mitre_tactic: Optional[MITRETactic] = None
     mitre_technique: str = ""
-    kill_chain_phase: Optional[KillChainPhase] = None
+    kill_chain_phases: list[KillChainPhase] = field(default_factory=list)
     iocs: list[str] = field(default_factory=list)
     evidence: list[str] = field(default_factory=list)
     recommended_actions: list[ResponseAction] = field(default_factory=list)
@@ -743,9 +744,19 @@ class AnalysisResult:
 
     def summary_dict(self) -> dict[str, Any]:
         """Serialize to a dictionary for JSON output."""
+        def _obj_dict(obj: Any) -> dict[str, Any]:
+            if obj is None:
+                return {}
+            slots = getattr(type(obj), "__slots__", None)
+            if slots:
+                return {k: getattr(obj, k) for k in slots if not k.startswith("_")}
+            if hasattr(obj, "__dict__"):
+                return {k: v for k, v in obj.__dict__.items() if not k.startswith("_")}
+            return {}
+
         return {
-            "pcap_summary": self.pcap_metadata.__dict__ if self.pcap_metadata else None,
-            "monitor_session": self.monitor_session.__dict__ if self.monitor_session else None,
+            "pcap_summary": _obj_dict(self.pcap_metadata) if self.pcap_metadata else None,
+            "monitor_session": _obj_dict(self.monitor_session) if self.monitor_session else None,
             "flow_count": len(self.flows),
             "dns_query_count": len(self.dns_queries),
             "http_request_count": len(self.http_requests),
