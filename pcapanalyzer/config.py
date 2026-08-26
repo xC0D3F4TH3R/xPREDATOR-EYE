@@ -17,11 +17,15 @@ from pathlib import Path
 # ═══════════════════════════════════════════════════════════════════════════
 
 PROJECT_ROOT = Path(__file__).resolve().parent
-QUARANTINE_DIR = PROJECT_ROOT / "quarantine"
-PLAYBOOK_DIR = PROJECT_ROOT / "playbooks"
-DATA_DIR = PROJECT_ROOT / "data"
-TEMP_DIR = Path(os.environ.get("PCAPANALYZER_TEMP", Path.cwd() / "pcapanalyzer_tmp"))
-DEFAULT_OUTPUT_DIR = Path(os.environ.get("PCAPANALYZER_OUTPUT", Path.cwd() / "pcapanalyzer_output"))
+_APP_ROOT = Path(os.environ.get("PCAPANALYZER_HOME", Path.home() / ".xpredator-eye"))
+QUARANTINE_DIR = _APP_ROOT / "quarantine"
+PLAYBOOK_DIR = _APP_ROOT / "playbooks"
+DATA_DIR = _APP_ROOT / "data"
+TEMP_DIR = Path(os.environ.get("PCAPANALYZER_TEMP", _APP_ROOT / "tmp"))
+DEFAULT_OUTPUT_DIR = Path(os.environ.get("PCAPANALYZER_OUTPUT", _APP_ROOT / "output"))
+
+# Also support project-level data (for default blocklist, etc.)
+PROJECT_DATA_DIR = PROJECT_ROOT / "data"
 
 # ═══════════════════════════════════════════════════════════════════════════
 # Platform Detection
@@ -170,6 +174,7 @@ CRITICAL_PATHS_MACOS: list[str] = [
 
 # Minimum number of correlated events to form a pattern
 BEHAVIOR_MIN_PATTERN_EVENTS: int = 3
+BEHAVIOR_MIN_EVENTS_PER_PATTERN: int = 3  # Alias for backward compatibility
 
 # Time window for sequence correlation (seconds)
 BEHAVIOR_SEQUENCE_WINDOW: float = 300.0  # 5 minutes

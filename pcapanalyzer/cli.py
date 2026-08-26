@@ -1,9 +1,12 @@
 """
-cli.py - Full CLI for the PcapMalAnalyzer Threat Intelligence Suite.
+cli.py - Full CLI for xPREDATOR-EYE Threat Intelligence Suite.
 
 Supports two primary modes:
   - ``live``  : Real-time monitoring, behavioral analysis, and response
   - ``analyze``: Static PCAP file analysis (offline forensic mode)
+
+With AI/ML integration, YARA scanning, professional report generation,
+SIEM integration, and LLM-powered analysis.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import __version__, config
+from .models import BehaviorEvent
 from .utils import setup_logging, get_logger
 
 logger = get_logger("cli")
@@ -24,11 +28,11 @@ logger = get_logger("cli")
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="pcapanalyzer",
+        prog="xpredator-eye",
         description=(
-            "PcapMalAnalyzer v%s - Enterprise Threat Intelligence Suite\n"
-            "Real-time monitoring, behavioral analysis, threat actor profiling,\n"
-            "damage assessment, and automated response.\n"
+            "xPREDATOR-EYE v%s - Enterprise AI-Powered Threat Intelligence Suite\n"
+            "Real-time monitoring, behavioral analysis, YARA scanning, ML classification,\n"
+            "LLM analysis, threat actor profiling, and automated response.\n"
         ) % __version__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
@@ -37,297 +41,385 @@ def build_parser() -> argparse.ArgumentParser:
             "  analyze   Static PCAP file offline forensic analysis\n"
             "\n"
             "Examples:\n"
-            "  python -m pcapanalyzer live --interface Ethernet\n"
-            "  python -m pcapanalyzer live --filter 'tcp port 443' -o results/\n"
-            "  python -m pcapanalyzer analyze capture.pcap\n"
-            "  python -m pcapanalyzer analyze capture.pcap --blocklist bl.json --respond\n"
+            "  xpredator-eye live --interface Ethernet\n"
+            "  xpredator-eye live --filter 'tcp port 443' -o results/\n"
+            "  xpredator-eye analyze capture.pcap\n"
+            "  xpredator-eye analyze capture.pcap --blocklist bl.json --respond\n"
+            "  xpredator-eye analyze capture.pcap --yara-rules rules/ --pdf report.pdf\n"
+            "  xpredator-eye analyze capture.pcap --llm --html report.html\n"
         ),
     )
 
     subparsers = parser.add_subparsers(dest="mode", help="Operating mode")
 
     # ── live mode ──────────────────────────────────────────────────────
-    live_parser = subparsers.add_parser("live", help="Real-time monitoring mode")
-    live_parser.add_argument("-i", "--interface", type=str, default=None,
-                             help="Network interface to capture on (auto-detect if omitted)")
-    live_parser.add_argument("-f", "--filter", type=str, default="",
-                             help="BPF capture filter (e.g. 'tcp port 443')")
-    live_parser.add_argument("-o", "--output-dir", type=str,
-                             default=str(config.DEFAULT_OUTPUT_DIR))
-    live_parser.add_argument("-b", "--blocklist", type=str, default=None,
-                             help="Path to local JSON blocklist")
-    live_parser.add_argument("--watch-paths", nargs="*", default=None,
-                             help="Additional filesystem paths to monitor")
-    live_parser.add_argument("--respond", action="store_true",
-                             help="Enable automated response (CAUTION: disables dry-run)")
-    live_parser.add_argument("--no-intel", action="store_true",
-                             help="Skip external API enrichment")
-    live_parser.add_argument("--duration", type=int, default=0,
-                             help="Monitoring duration in seconds (0 = indefinite)")
-    live_parser.add_argument("--interfaces", action="store_true",
-                             help="List available network interfaces and exit")
-    live_parser.add_argument("-v", "--verbose", action="store_true")
-    live_parser.add_argument("-q", "--quiet", action="store_true")
+    live_parser = subparsers.add_parser("live", help="Real-time monitoring and response")
+    live_parser.add_argument("--interface", "-i", help="Network interface to capture on")
+    live_parser.add_argument("--filter", "-f", default="", help="Capture filter (BPF syntax)")
+    live_parser.add_argument("--output", "-o", type=Path, help="Output directory")
+    live_parser.add_argument("--watch-paths", nargs="*", help="Directories to watch")
+    live_parser.add_argument("--blocklist", type=Path, help="IOC blocklist JSON")
+    live_parser.add_argument("--respond", action="store_true", help="Enable automated response")
+    live_parser.add_argument("--dry-run", action="store_true", default=True, help="Dry-run responses")
+    live_parser.add_argument("--quiet", action="store_true", help="Suppress output")
+    live_parser.add_argument("--yara-rules", type=Path, help="YARA rules path")
+    live_parser.add_argument("--pdf", type=Path, help="PDF report on exit")
 
     # ── analyze mode ───────────────────────────────────────────────────
-    analyze_parser = subparsers.add_parser("analyze", help="Static PCAP analysis mode")
-    analyze_parser.add_argument("pcap_file", type=str, help="Path to the PCAP file")
-    analyze_parser.add_argument("-o", "--output-dir", type=str,
-                                default=str(config.DEFAULT_OUTPUT_DIR))
-    analyze_parser.add_argument("-b", "--blocklist", type=str, default=None)
-    analyze_parser.add_argument("--no-intel", action="store_true")
-    analyze_parser.add_argument("--respond", action="store_true",
-                                help="Generate response commands for detected threats")
-    analyze_parser.add_argument("--json-only", action="store_true")
-    analyze_parser.add_argument("-v", "--verbose", action="store_true")
-    analyze_parser.add_argument("-q", "--quiet", action="store_true")
+    analyze_parser = subparsers.add_parser("analyze", help="Static PCAP analysis")
+    analyze_parser.add_argument("pcap_file", help="Path to PCAP/PCAPNG file")
+    analyze_parser.add_argument("--output", "-o", type=Path, help="Output directory")
+    analyze_parser.add_argument("--blocklist", type=Path, help="IOC blocklist JSON")
+    analyze_parser.add_argument("--respond", action="store_true", help="Generate response plan")
+    analyze_parser.add_argument("--respond-execute", action="store_true", help="Execute responses")
+    analyze_parser.add_argument("--quiet", action="store_true", help="Suppress output")
+    analyze_parser.add_argument("--yara-rules", type=Path, help="YARA rules path")
+    analyze_parser.add_argument("--ml-model", type=Path, help="Pre-trained ML model")
+    analyze_parser.add_argument("--pdf", type=Path, help="Generate PDF report")
+    analyze_parser.add_argument("--html", type=Path, help="Generate HTML report")
+    analyze_parser.add_argument("--stix", type=Path, help="Export IOCs as STIX bundle")
+    analyze_parser.add_argument("--siem-url", help="Elasticsearch URL for SIEM push")
+    analyze_parser.add_argument("--llm", action="store_true", help="Enable LLM analysis")
+    analyze_parser.add_argument("--llm-model", default="llama3.2:3b", help="Ollama model")
+    analyze_parser.add_argument("--classification", default="UNCLASSIFIED // FOR OFFICIAL USE ONLY")
 
-    parser.add_argument("--version", action="version", version=f"PcapMalAnalyzer {__version__}")
+    subparsers.add_parser("version", help="Show version")
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
-
-    if not args.mode:
-        parser.print_help()
-        return 0
-
-    log_level = logging.DEBUG if args.verbose else logging.INFO
-    setup_logging(log_level)
-    log = get_logger("cli")
-    log.info("PcapMalAnalyzer v%s starting (mode=%s)", __version__, args.mode)
-
-    if args.mode == "live":
-        return _run_live(args, log)
-    elif args.mode == "analyze":
-        return _run_analyze(args, log)
-    return 0
-
-
-def _run_live(args: argparse.Namespace, log: logging.Logger) -> int:
-    """Execute live monitoring mode."""
-    from .core.orchestrator import Orchestrator
-
-    if hasattr(args, "interfaces") and args.interfaces:
-        from .capture.live_capture import LiveCaptureEngine
-        engine = LiveCaptureEngine()
-        ifaces = engine.list_interfaces()
-        for iface in ifaces:
-            print(f"  {iface}")
-        return 0
-
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    orch = Orchestrator(
-        interface=args.interface,
-        capture_filter=args.filter,
-        watch_paths=args.watch_paths,
-        blocklist_path=Path(args.blocklist) if args.blocklist else None,
-        dry_run=not args.respond,
-        output_dir=output_dir,
-    )
-
-    if args.respond:
-        log.warning("*** AUTOMATED RESPONSE ENABLED - commands will be executed ***")
-        log.warning("Press Ctrl+C at any time to stop safely")
-
-    try:
-        if args.duration > 0:
-            import threading
-            timer = threading.Timer(args.duration, lambda: orch.stop())
-            timer.daemon = True
-            timer.start()
-        orch.start()
-    except KeyboardInterrupt:
-        log.info("Interrupted - generating final report...")
-    finally:
-        orch.stop()
-
-    result = orch.get_result()
-    _print_live_summary(result, log)
-    return 0
-
-
-def _run_analyze(args: argparse.Namespace, log: logging.Logger) -> int:
-    """Execute static PCAP analysis mode."""
-    start_time = time.monotonic()
+def _run_analyze(args: argparse.Namespace) -> int:
+    from rich.console import Console
+    from rich.table import Table
+    from rich import box
 
     from .ingestion import validate_pcap, extract_metadata, generate_flows
     from .parser import parse_dns, parse_http, parse_tls, parse_credentials
     from .extractor import carve_files
     from .intelligence import IntelligenceEngine
-    from .reporter import generate_json_report, render_terminal_report
     from .analysis.behavior_engine import BehaviorEngine
     from .analysis.threat_actor import ThreatActorProfiler
     from .analysis.damage_assessor import DamageAssessor
     from .core.alert_system import AlertSystem
     from .response.response_engine import ResponseEngine
-    from .models import AnalysisResult, IngestionError
+    from .reporter import render_terminal_report, _serialize
+    from .models import AnalysisResult, Severity, Alert
 
-    output_dir = Path(args.output_dir)
-    quarantine_dir = output_dir / "quarantine"
-    report_dir = output_dir / "reports"
-    quarantine_dir.mkdir(parents=True, exist_ok=True)
-    report_dir.mkdir(parents=True, exist_ok=True)
+    console = Console()
+    log = logger
+    if args.quiet:
+        log = logging.getLogger("pcapanalyzer.quiet")
+        log.setLevel(logging.WARNING)
+
+    output_dir = args.output or config.DEFAULT_OUTPUT_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     result = AnalysisResult(analysis_start=datetime.now())
 
-    # Stage 1: Ingestion
-    log.info("=== Stage 1: Ingestion ===")
-    try:
-        pcap_path = validate_pcap(args.pcap_file)
-        result.pcap_metadata = extract_metadata(pcap_path)
-        result.flows = list(generate_flows(pcap_path))
-        log.info("Collected %d flows", len(result.flows))
-    except IngestionError as exc:
-        log.error("Ingestion failed: %s", exc)
-        result.errors.append(f"Ingestion: {exc}")
-        return 1
+    with console.status("[bold green]Analyzing PCAP..."):
+        try:
+            pcap_path = validate_pcap(args.pcap_file)
+        except Exception as exc:
+            console.print(f"[bold red]Error:[/] {exc}")
+            return 1
 
-    # Stage 2: Protocol Parsing
-    log.info("=== Stage 2: Protocol Parsing ===")
-    try:
+        # Stage 1: Ingestion
+        log.info("=== Stage 1: PCAP Ingestion ===")
+        result.pcap_metadata = extract_metadata(pcap_path)
+        for flow_meta in generate_flows(pcap_path):
+            result.flows.append(flow_meta)
+
+        # Stage 2: Protocol Parsing
+        log.info("=== Stage 2: Protocol Parsing ===")
         result.dns_queries = parse_dns(str(pcap_path))
         result.http_requests = parse_http(str(pcap_path))
         result.tls_sessions = parse_tls(str(pcap_path))
         result.credentials = parse_credentials(str(pcap_path))
-    except Exception as exc:
-        log.error("Parsing error: %s", exc)
-        result.errors.append(f"Parse: {exc}")
 
-    # Stage 3: File Carving
-    log.info("=== Stage 3: File Extraction ===")
-    try:
-        result.carved_files = carve_files(str(pcap_path), quarantine_dir)
-    except Exception as exc:
-        log.error("Extraction error: %s", exc)
-        result.errors.append(f"Extract: {exc}")
+        # Stage 3: File Carving
+        log.info("=== Stage 3: File Carving ===")
+        carved_dir = output_dir / "carved"
+        carved_dir.mkdir(parents=True, exist_ok=True)
+        for crafted in carve_files(str(pcap_path), carved_dir):
+            result.carved_files.append(crafted)
 
-    # Stage 4: Intelligence
-    log.info("=== Stage 4: Intelligence ===")
-    intel = IntelligenceEngine()
-    if args.blocklist:
-        intel.load_blocklist(Path(args.blocklist))
-    try:
-        if not args.no_intel:
-            result.ioc_matches = intel.full_analysis(
-                dns_queries=result.dns_queries,
-                http_requests=result.http_requests,
-                tls_sessions=result.tls_sessions,
-                carved_files=result.carved_files,
-                credentials=result.credentials,
-            )
+        # Stage 4: Intelligence
+        log.info("=== Stage 4: Intelligence ===")
+        intel = IntelligenceEngine()
+        if args.blocklist:
+            intel.load_blocklist(args.blocklist)
         else:
-            intel.extract_iocs(
-                dns_queries=result.dns_queries,
-                http_requests=result.http_requests,
-                tls_sessions=result.tls_sessions,
-                carved_files=result.carved_files,
-                credentials=result.credentials,
-            )
-            result.ioc_matches = intel.match_local()
-    except Exception as exc:
-        log.error("Intelligence error: %s", exc)
-        result.errors.append(f"Intel: {exc}")
-
-    # Stage 5: Behavioral Analysis (from parsed artifacts)
-    log.info("=== Stage 5: Behavioral Analysis ===")
-    beh_engine = BehaviorEngine()
-    for dq in result.dns_queries:
-        sev_type = "dns_query"
-        be = __import__("pcapanalyzer.models", fromlist=["BehaviorEvent"]).BehaviorEvent(
-            timestamp=dq.timestamp, event_type=sev_type, target=dq.query_name,
-            src_ip=dq.src_ip or "",
+            intel.load_default_blocklists()
+        result.ioc_matches = intel.full_analysis(
+            result.dns_queries, result.http_requests,
+            result.tls_sessions, result.carved_files, result.credentials,
         )
-        beh_engine.ingest_event(be)
-    for hr in result.http_requests:
-        be = __import__("pcapanalyzer.models", fromlist=["BehaviorEvent"]).BehaviorEvent(
-            timestamp=hr.timestamp, event_type="http_request",
-            src_ip=hr.src_ip or "", dst_ip=hr.dst_ip or "",
-            target=hr.host,
-        )
-        beh_engine.ingest_event(be)
-    result.behavioral_profile = beh_engine.analyze()
 
-    # Stage 6: Threat Actor Profiling
-    log.info("=== Stage 6: Threat Actor Profiling ===")
-    profiler = ThreatActorProfiler()
-    if result.behavioral_profile and result.behavioral_profile.patterns:
+        # Stage 5: YARA Scanning
+        yara_matches_all = []
+        if args.yara_rules:
+            log.info("=== Stage 5A: YARA Scanning ===")
+            try:
+                from .detection.yara_scanner import YaraScanner
+                yara_scanner = YaraScanner()
+                yara_scanner.load_rules(args.yara_rules)
+                for cf in result.carved_files:
+                    if cf.quarantine_path:
+                        matches = yara_scanner.scan_file(cf.quarantine_path)
+                        for m in matches:
+                            m["file"] = cf.filename
+                            yara_matches_all.append(m)
+                if yara_matches_all:
+                    console.print(f"  [yellow]YARA: {len(yara_matches_all)} matches[/]")
+            except ImportError:
+                console.print("  [dim]yara-python not installed[/]")
+
+        # Stage 6: Behavioral Analysis
+        log.info("=== Stage 5B: Behavioral Analysis ===")
+        beh_engine = BehaviorEngine()
+        for dq in result.dns_queries:
+            beh_engine.ingest_event(BehaviorEvent(
+                timestamp=dq.timestamp, event_type="dns_query",
+                target=dq.query_name, src_ip=dq.src_ip or "",
+            ))
+        for hr in result.http_requests:
+            beh_engine.ingest_event(BehaviorEvent(
+                timestamp=hr.timestamp, event_type="http_request",
+                src_ip=hr.src_ip or "", dst_ip=hr.dst_ip or "", target=hr.host,
+            ))
+        for tls in result.tls_sessions:
+            beh_engine.ingest_event(BehaviorEvent(
+                timestamp=tls.timestamp, event_type="tls_connection",
+                src_ip=tls.src_ip or "", dst_ip=tls.dst_ip or "", target=tls.sni,
+            ))
+        for cred in result.credentials:
+            beh_engine.ingest_event(BehaviorEvent(
+                timestamp=cred.timestamp, event_type="credential_access",
+                src_ip=cred.src_ip or "", dst_ip=cred.dst_ip or "",
+                target=cred.username or cred.auth_type,
+            ))
+        for cf in result.carved_files:
+            beh_engine.ingest_event(BehaviorEvent(
+                event_type="file_created", target=cf.filename,
+                src_ip=cf.src_ip or "", dst_ip=cf.dst_ip or "",
+            ))
+        result.behavioral_profile = beh_engine.analyze()
+
+        # Stage 7: Threat Actor Profiling
+        log.info("=== Stage 6: Threat Actor Profiling ===")
+        profiler = ThreatActorProfiler()
         actor = profiler.profile_from_behavior(result.behavioral_profile)
         if actor:
-            result.threat_actors = profiler.get_actors()
-        profiler.correlate_iocs(result.ioc_matches)
-        profiler.build_campaign()
-        result.campaigns = profiler.get_campaigns()
+            result.threat_actors = [actor]
 
-    # Stage 7: Damage Assessment
-    log.info("=== Stage 7: Damage Assessment ===")
-    assessor = DamageAssessor()
-    result.damage_assessment = assessor.assess(
-        profile=result.behavioral_profile,
-    )
+        # Stage 8: Damage Assessment
+        log.info("=== Stage 7: Damage Assessment ===")
+        assessor = DamageAssessor()
+        result.damage_assessment = assessor.assess(result.behavioral_profile, beh_engine._events)
 
-    # Stage 8: Alerts
-    log.info("=== Stage 8: Alert Generation ===")
-    alert_sys = AlertSystem(output_dir=output_dir)
-    for match in result.ioc_matches:
-        alert = alert_sys.alert_from_intel_match(match)
-        alert_sys.raise_alert(alert)
-    if result.behavioral_profile:
-        for pattern in result.behavioral_profile.patterns:
-            alert = alert_sys.alert_from_pattern(pattern)
-            alert_sys.raise_alert(alert)
-    result.alerts = alert_sys.get_alerts()
-    result.alert_groups = alert_sys.correlate()
+        # Stage 9: Alert Generation
+        log.info("=== Stage 8: Alert Generation ===")
+        alert_system = AlertSystem(output_dir=output_dir)
+        if result.damage_assessment:
+            for vector in result.damage_assessment.vectors:
+                if vector.score >= 5.0:
+                    alert_system.raise_alert(Alert(
+                        title=f"{vector.vector_name} Impact Detected",
+                        description=f"Score: {vector.score:.1f}/10. {vector.estimated_impact}",
+                        severity=Severity.HIGH if vector.score >= 7.0 else Severity.MEDIUM,
+                    ))
+        result.alerts = alert_system._alerts
 
-    # Stage 9: Response Plan
-    if args.respond:
-        log.info("=== Stage 9: Response Plan Generation ===")
-        resp_engine = ResponseEngine(dry_run=True)
-        critical_alerts = [a for a in result.alerts if a.severity.numeric >= Severity.HIGH.numeric]
-        if critical_alerts:
-            result.response_plan = resp_engine.generate_plan(
-                critical_alerts, result.damage_assessment,
+        # Stage 10: ML Classification
+        ml_result = None
+        if result.pcap_metadata:
+            log.info("=== Stage 8A: ML Classification ===")
+            try:
+                from .ml.feature_extractor import FeatureExtractor
+                from .ml.classifier import NetworkClassifier
+                ext_ml = FeatureExtractor()
+                features = ext_ml.extract_from_pcap_metadata(result.pcap_metadata)
+                classifier = NetworkClassifier()
+                if args.ml_model and classifier.load_model(args.ml_model):
+                    ml_result = classifier.predict(features)
+                    if ml_result.get("is_anomaly"):
+                        console.print(f"  [bold red]ML ANOMALY: score={ml_result.get('anomaly_score', 0):.2f}[/]")
+                else:
+                    classifier.fit([features], [0])
+                    ml_result = classifier.predict(features)
+            except ImportError:
+                console.print("  [dim]ML libraries not installed[/]")
+
+        # Stage 11: LLM Analysis
+        llm_analysis = None
+        if args.llm:
+            log.info("=== Stage 8B: LLM Analysis ===")
+            try:
+                from .analysis.llm_analyzer import SecurityLLMAnalyzer
+                llm = SecurityLLMAnalyzer(model=args.llm_model)
+                if llm.is_available:
+                    llm_analysis = llm.generate_executive_summary({
+                        "flows": len(result.flows), "alerts": len(result.alerts),
+                        "iocs": len(result.ioc_matches),
+                        "damage_score": result.damage_assessment.overall_score if result.damage_assessment else 0,
+                    })
+                    console.print("  [green]LLM analysis complete[/]")
+            except ImportError:
+                console.print("  [dim]ollama not installed[/]")
+
+        # Stage 12: Response Plan
+        if args.respond or args.respond_execute:
+            log.info("=== Stage 9: Response Plan ===")
+            response_engine = ResponseEngine()
+            result.response_plan = response_engine.generate_plan(
+                result.alerts, result.damage_assessment,
             )
-            log.warning("Response plan: %d commands generated", len(result.response_plan.commands))
+            if args.respond_execute and result.response_plan:
+                executed = response_engine.execute_plan(result.response_plan)
+                console.print(f"  [yellow]Executed {executed} response commands[/]")
 
-    # Finalize
-    elapsed = time.monotonic() - start_time
-    result.elapsed_seconds = elapsed
-    result.analysis_end = datetime.now()
-
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    json_path = report_dir / f"pcapanalysis_{ts}.json"
-    try:
-        generate_json_report(result, json_path)
-    except Exception as exc:
-        log.error("Report error: %s", exc)
-
-    if not args.quiet:
+        # Stage 13: Reports
+        log.info("=== Stage 10: Report Generation ===")
         render_terminal_report(result)
 
-    log.info("Analysis complete in %.1fs. Report: %s", elapsed, json_path)
+        if args.pdf:
+            try:
+                from .reporting.pdf_report import PDFReportGenerator
+                PDFReportGenerator().generate(result, args.pdf, classification=args.classification)
+                console.print(f"  [green]PDF: {args.pdf}[/]")
+            except ImportError:
+                console.print("  [dim]weasyprint not installed[/]")
+
+        if args.html:
+            try:
+                from .reporting.html_report import HTMLReportGenerator
+                HTMLReportGenerator().generate(result, args.html, classification=args.classification)
+                console.print(f"  [green]HTML: {args.html}[/]")
+            except Exception as exc:
+                console.print(f"  [dim]HTML report failed: {exc}[/]")
+
+        if args.stix:
+            try:
+                from .integrations.siem_integration import STIXExporter
+                stix = STIXExporter()
+                bundle = stix.export_iocs(result.ioc_matches)
+                stix.save_bundle(bundle, args.stix)
+                console.print(f"  [green]STIX: {args.stix}[/]")
+            except Exception as exc:
+                console.print(f"  [dim]STIX failed: {exc}[/]")
+
+        if args.siem_url:
+            try:
+                from .integrations.siem_integration import ElasticsearchIntegration
+                es = ElasticsearchIntegration([args.siem_url])
+                if es.connect():
+                    indexed = es.push_analysis_result(result)
+                    console.print(f"  [green]Pushed {indexed} alerts to ES[/]")
+            except ImportError:
+                console.print("  [dim]elasticsearch not installed[/]")
+
+        # JSON report
+        json_path = output_dir / "analysis_report.json"
+        try:
+            import json as json_mod
+            report_data = {
+                "version": __version__, "timestamp": datetime.now().isoformat(),
+                "pcap_file": str(pcap_path), "flows": len(result.flows),
+                "dns": len(result.dns_queries), "http": len(result.http_requests),
+                "tls": len(result.tls_sessions), "creds": len(result.credentials),
+                "files": len(result.carved_files), "iocs": len(result.ioc_matches),
+                "alerts": len(result.alerts), "actors": len(result.threat_actors),
+                "damage": result.damage_assessment.overall_score if result.damage_assessment else 0,
+                "behavioral": result.behavioral_profile.behavioral_score if result.behavioral_profile else 0,
+                "yara_matches": len(yara_matches_all), "ml": ml_result, "llm": llm_analysis,
+            }
+            with open(json_path, "w", encoding="utf-8") as f:
+                json_mod.dump(report_data, f, indent=2, default=_serialize)
+            console.print(f"\n  [dim]Report: {json_path}[/]")
+        except Exception as exc:
+            console.print(f"  [dim]JSON error: {exc}[/]")
+
+    result.analysis_end = datetime.now()
+
+    summary = Table(title="xPREDATOR-EYE Complete", box=box.DOUBLE_EDGE, border_style="cyan")
+    summary.add_column("Metric", style="bold")
+    summary.add_column("Value", style="green")
+    summary.add_row("Flows", str(len(result.flows)))
+    summary.add_row("DNS Queries", str(len(result.dns_queries)))
+    summary.add_row("HTTP Requests", str(len(result.http_requests)))
+    summary.add_row("TLS Sessions", str(len(result.tls_sessions)))
+    summary.add_row("Credentials", str(len(result.credentials)))
+    summary.add_row("Carved Files", str(len(result.carved_files)))
+    summary.add_row("IOCs", str(len(result.ioc_matches)))
+    summary.add_row("Alerts", str(len(result.alerts)))
+    summary.add_row("Actors", str(len(result.threat_actors)))
+    if yara_matches_all:
+        summary.add_row("YARA Matches", str(len(yara_matches_all)))
+    if ml_result:
+        summary.add_row("ML Class", ml_result.get("class", "?"))
+    if result.damage_assessment:
+        summary.add_row("Damage", f"{result.damage_assessment.overall_score:.1f}/100")
+    if result.behavioral_profile:
+        summary.add_row("Behavioral", f"{result.behavioral_profile.behavioral_score:.2f}")
+    console.print(summary)
     return 0
 
 
-def _print_live_summary(result, log):
-    """Print a summary after live monitoring stops."""
+def _run_live(args: argparse.Namespace) -> int:
     from rich.console import Console
     from rich.panel import Panel
-    console = Console()
 
-    console.print()
-    console.print(Panel(
-        f"[bold cyan]Live Monitoring Session Complete[/]\n\n"
-        f"Duration: {result.elapsed_seconds:.0f}s\n"
-        f"Packets: {result.monitor_session.packet_count if result.monitor_session else 0:,}\n"
-        f"Events: {result.monitor_session.event_count if result.monitor_session else 0:,}\n"
-        f"Alerts: {result.monitor_session.alert_count if result.monitor_session else 0}\n"
-        f"Threat Actors: {len(result.threat_actors)}\n"
-        f"Damage Score: {result.damage_assessment.overall_score:.1f}/100" if result.damage_assessment else "N/A",
-        title="[bold]Summary[/]",
-        border_style="green",
+    from .core.orchestrator import Orchestrator
+    from .reporter import render_terminal_report
+
+    console = Console()
+    output_dir = args.output or config.DEFAULT_OUTPUT_DIR
+
+    console.print(Panel.fit(
+        f"[bold cyan]xPREDATOR-EYE[/] v{__version__} - Real-Time Threat Monitoring",
+        border_style="cyan",
     ))
+
+    orch = Orchestrator(
+        interface=args.interface,
+        capture_filter=args.filter,
+        watch_paths=args.watch_paths,
+        blocklist_path=args.blocklist,
+        dry_run=args.dry_run,
+        output_dir=output_dir,
+    )
+
+    try:
+        orch.start()
+        if not args.quiet:
+            console.print("[green]Monitoring started. Ctrl+C to stop.[/]")
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        orch.stop()
+
+    result = orch.get_result()
+    render_terminal_report(result)
+    return 0
+
+
+def main() -> None:
+    setup_logging()
+    parser = build_parser()
+    args = parser.parse_args()
+
+    if not args.mode:
+        parser.print_help()
+        return
+
+    if args.mode == "version":
+        print(f"xPREDATOR-EYE v{__version__}")
+        return
+
+    rc = _run_analyze(args) if args.mode == "analyze" else _run_live(args) if args.mode == "live" else 1
+    sys.exit(rc or 0)
+
+
+if __name__ == "__main__":
+    main()

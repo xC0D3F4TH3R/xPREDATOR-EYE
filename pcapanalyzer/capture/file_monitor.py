@@ -34,6 +34,9 @@ class FileMonitor:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.Lock()
+        self._max_baseline_size = 100000  # Max files in baseline
+        self._max_changes = 10000
+        self._max_events = 10000
 
     def set_watch_paths(self, paths: list[str]) -> None:
         self._watch_paths = [Path(p) for p in paths if os.path.exists(p)]
@@ -135,19 +138,27 @@ class FileMonitor:
                 except OSError:
                     pass
                 self._changes.append(fc)
+                if len(self._changes) > self._max_changes:
+                    self._changes = self._changes[-self._max_changes:]
                 self._events.append(SystemEvent(
                     event_type="file_created", severity=Severity.MEDIUM,
                     source="file_monitor",
                     details={"path": fp, "size": current[fp]["size"]},
                     timestamp=datetime.now()))
+                if len(self._events) > self._max_events:
+                    self._events = self._events[-self._max_events:]
 
             for fp in baseline_paths - current_paths:
                 fc = FileChange(path=fp, change_type="deleted", timestamp=datetime.now())
                 self._changes.append(fc)
+                if len(self._changes) > self._max_changes:
+                    self._changes = self._changes[-self._max_changes:]
                 self._events.append(SystemEvent(
                     event_type="file_deleted", severity=Severity.MEDIUM,
                     source="file_monitor", details={"path": fp},
                     timestamp=datetime.now()))
+                if len(self._events) > self._max_events:
+                    self._events = self._events[-self._max_events:]
 
             for fp in baseline_paths & current_paths:
                 old_m, new_m = self._baseline[fp], current[fp]
@@ -160,11 +171,20 @@ class FileMonitor:
                     except OSError:
                         pass
                     self._changes.append(fc)
+                    if len(self._changes) > self._max_changes:
+                        self._changes = self._changes[-self._max_changes:]
                     self._events.append(SystemEvent(
                         event_type="file_modified", severity=Severity.LOW,
                         source="file_monitor",
                         details={"path": fp, "old_size": old_m["size"], "new_size": new_m["size"]},
                         timestamp=datetime.now()))
+                    if len(self._events) > self._max_events:
+                        self._events = self._events[-self._max_events:]
+            # Prune baseline to max size
+            if len(current) > self._max_baseline_size:
+                # Keep only most recently modified files
+                sorted_items = sorted(current.items(), key=lambda x: x[1]["mtime"], reverse=True)
+                current = dict(sorted_items[:self._max_baseline_size])
             self._baseline = current
 
     def get_changes(self) -> list[FileChange]:

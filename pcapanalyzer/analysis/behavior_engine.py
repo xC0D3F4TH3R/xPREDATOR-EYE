@@ -24,6 +24,9 @@ from ..utils import get_logger
 
 logger = get_logger("behavior_engine")
 
+MAX_EVENTS = 10000
+MAX_WINDOW_EVENTS = 5000
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Detection Rules: event-type sequences mapped to TTPs
 # ═══════════════════════════════════════════════════════════════════════════
@@ -103,6 +106,228 @@ SEQUENCE_RULES: list[dict] = [
         "techniques": ["T1068", "T1055"],
         "description": "Suspicious process spawned with elevated privileges",
     },
+    {
+        "name": "PowerShell Encoded Command",
+        "sequence": ["process_start"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.EXPLOITATION, KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.EXECUTION, MITRETactic.DEFENSE_EVASION],
+        "techniques": ["T1059.001", "T1027"],
+        "description": "PowerShell with encoded command (possible fileless malware)",
+    },
+    {
+        "name": "Scheduled Task Persistence",
+        "sequence": ["process_start", "file_created", "process_start"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.PERSISTENCE, MITRETactic.EXECUTION],
+        "techniques": ["T1053.005", "T1059.001"],
+        "description": "File creation followed by scheduled task registration",
+    },
+    {
+        "name": "WMI Lateral Movement",
+        "sequence": ["process_start", "network_connect"],
+        "min_count": 2,
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.EXPLOITATION, KillChainPhase.ACTIONS_ON_OBJECTIVES],
+        "mitre": [MITRETactic.LATERAL_MOVEMENT, MITRETactic.EXECUTION],
+        "techniques": ["T1047", "T1021.006"],
+        "description": "WMI-based remote execution detected",
+    },
+    {
+        "name": "Registry Persistence Mechanism",
+        "sequence": ["file_created", "process_start"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.PERSISTENCE, MITRETactic.DEFENSE_EVASION],
+        "techniques": ["T1547.001", "T1112"],
+        "description": "Registry modification followed by process execution",
+    },
+    {
+        "name": "DLL Side-Loading Attack",
+        "sequence": ["file_created", "process_start"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.DEFENSE_EVASION, MITRETactic.PERSISTENCE],
+        "techniques": ["T1574.002", "T1218"],
+        "description": "DLL loaded from non-standard location",
+    },
+    {
+        "name": "Process Injection Detection",
+        "sequence": ["process_start", "process_start"],
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.EXPLOITATION, KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.DEFENSE_EVASION, MITRETactic.PRIV_ESCALATION],
+        "techniques": ["T1055", "T1620"],
+        "description": "Process injection into legitimate process detected",
+    },
+    {
+        "name": "Encrypted C2 Channel",
+        "sequence": ["tls_connection", "network_connect"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.COMMAND_AND_CONTROL],
+        "mitre": [MITRETactic.C2, MITRETactic.EXECUTION],
+        "techniques": ["T1573", "T1071"],
+        "description": "Encrypted channel to known C2 infrastructure",
+    },
+    {
+        "name": "DNS over HTTPS Tunneling",
+        "sequence": ["dns_query", "tls_connection"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.COMMAND_AND_CONTROL, KillChainPhase.ACTIONS_ON_OBJECTIVES],
+        "mitre": [MITRETactic.C2, MITRETactic.EXFILTRATION],
+        "techniques": ["T1071.004", "T1573.002"],
+        "description": "DNS queries tunneled over HTTPS to evade detection",
+    },
+    {
+        "name": "LOLBin Abuse Detection",
+        "sequence": ["process_start"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.INSTALLATION, KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.DEFENSE_EVASION, MITRETactic.EXECUTION],
+        "techniques": ["T1218", "T1059"],
+        "description": "Living-off-the-land binary used for execution",
+    },
+    {
+        "name": "Fileless Malware Pattern",
+        "sequence": ["process_start", "network_connect"],
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.EXPLOITATION, KillChainPhase.COMMAND_AND_CONTROL],
+        "mitre": [MITRETactic.EXECUTION, MITRETactic.DEFENSE_EVASION],
+        "techniques": ["T1059.001", "T1620"],
+        "description": "Memory-only execution with no file drop detected",
+    },
+    {
+        "name": "Ransomware Encryption Behavior",
+        "sequence": ["file_created", "file_modified", "file_modified", "file_modified"],
+        "min_count": 4,
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.ACTIONS_ON_OBJECTIVES],
+        "mitre": [MITRETactic.IMPACT],
+        "techniques": ["T1486", "T1490"],
+        "description": "Mass file modification/encryption pattern consistent with ransomware",
+    },
+    {
+        "name": "Crypto Mining Activity",
+        "sequence": ["process_start", "network_connect"],
+        "severity": Severity.MEDIUM,
+        "kill_chain": [KillChainPhase.INSTALLATION, KillChainPhase.ACTIONS_ON_OBJECTIVES],
+        "mitre": [MITRETactic.IMPACT, MITRETactic.C2],
+        "techniques": ["T1496", "T1071"],
+        "description": "High CPU process with mining pool connections",
+    },
+    {
+        "name": "Data Staging in Temp Directory",
+        "sequence": ["file_created", "file_created", "network_connect"],
+        "min_count": 3,
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.ACTIONS_ON_OBJECTIVES],
+        "mitre": [MITRETactic.COLLECTION, MITRETactic.EXFILTRATION],
+        "techniques": ["T1074.001", "T1560"],
+        "description": "Multiple files created in temp directory before exfiltration",
+    },
+    {
+        "name": "Web Shell Deployment",
+        "sequence": ["file_created", "network_connect"],
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.INSTALLATION, KillChainPhase.COMMAND_AND_CONTROL],
+        "mitre": [MITRETactic.PERSISTENCE, MITRETactic.C2],
+        "techniques": ["T1505.003", "T1071.001"],
+        "description": "Web-accessible file creation with subsequent network activity",
+    },
+    {
+        "name": "Supply Chain Compromise Indicator",
+        "sequence": ["process_start", "network_connect", "file_created"],
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.WEAPONIZATION, KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.INITIAL_ACCESS, MITRETactic.PERSISTENCE],
+        "techniques": ["T1195.002", "T1554"],
+        "description": "Legitimate process connecting to update infrastructure and writing files",
+    },
+    {
+        "name": "Brute Force Detection",
+        "sequence": ["network_connect", "network_connect", "network_connect", "network_connect"],
+        "min_count": 10,
+        "severity": Severity.MEDIUM,
+        "kill_chain": [KillChainPhase.EXPLOITATION],
+        "mitre": [MITRETactic.CREDENTIAL_ACCESS],
+        "techniques": ["T1110", "T1046"],
+        "description": "Multiple rapid authentication attempts to same service",
+    },
+    {
+        "name": "Kerberoasting Attack",
+        "sequence": ["process_start", "network_connect"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.EXPLOITATION],
+        "mitre": [MITRETactic.CREDENTIAL_ACCESS],
+        "techniques": ["T1558.003", "T1087.002"],
+        "description": "Kerberos TGS request followed by offline cracking attempt",
+    },
+    {
+        "name": "Pass-the-Hash Detection",
+        "sequence": ["network_connect", "network_connect"],
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.EXPLOITATION, KillChainPhase.ACTIONS_ON_OBJECTIVES],
+        "mitre": [MITRETactic.LATERAL_MOVEMENT, MITRETactic.CREDENTIAL_ACCESS],
+        "techniques": ["T1550.002", "T1021.002"],
+        "description": "SMB lateral movement with reused NTLM hashes",
+    },
+    {
+        "name": "Data Exfiltration Over DNS",
+        "sequence": ["dns_query", "dns_query", "dns_query"],
+        "min_count": 3,
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.ACTIONS_ON_OBJECTIVES],
+        "mitre": [MITRETactic.EXFILTRATION, MITRETactic.C2],
+        "techniques": ["T1048.003", "T1071.004"],
+        "description": "High-volume DNS queries suggesting data exfiltration via DNS",
+    },
+    {
+        "name": "Suspicious TLS Certificate",
+        "sequence": ["tls_connection"],
+        "severity": Severity.MEDIUM,
+        "kill_chain": [KillChainPhase.COMMAND_AND_CONTROL],
+        "mitre": [MITRETactic.C2, MITRETactic.DEFENSE_EVASION],
+        "techniques": ["T1573.002", "T1001"],
+        "description": "Self-signed or short-lived TLS certificate detected",
+    },
+    {
+        "name": "Credential Dumping via LSASS",
+        "sequence": ["process_start", "credential_access"],
+        "severity": Severity.CRITICAL,
+        "kill_chain": [KillChainPhase.EXPLOITATION],
+        "mitre": [MITRETactic.CREDENTIAL_ACCESS, MITRETactic.DEFENSE_EVASION],
+        "techniques": ["T1003.001", "T1003.002"],
+        "description": "LSASS memory access followed by credential harvesting",
+    },
+    {
+        "name": "Defense Evasion via Timestomping",
+        "sequence": ["file_modified", "process_start"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.INSTALLATION],
+        "mitre": [MITRETactic.DEFENSE_EVASION],
+        "techniques": ["T1070.006", "T1036"],
+        "description": "File timestamp modification to evade forensic detection",
+    },
+    {
+        "name": "C2 Beaconing Pattern",
+        "sequence": ["network_connect", "network_connect", "network_connect"],
+        "min_count": 5,
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.COMMAND_AND_CONTROL],
+        "mitre": [MITRETactic.C2],
+        "techniques": ["T1071", "T1573"],
+        "description": "Periodic connections to same destination suggesting C2 beaconing",
+    },
+    {
+        "name": "Hidden Window Execution",
+        "sequence": ["process_start"],
+        "severity": Severity.HIGH,
+        "kill_chain": [KillChainPhase.EXPLOITATION],
+        "mitre": [MITRETactic.DEFENSE_EVASION, MITRETactic.EXECUTION],
+        "techniques": ["T1059.001", "T1564"],
+        "description": "Process launched with hidden window to avoid detection",
+    },
 ]
 
 
@@ -124,6 +349,8 @@ class BehaviorEngine:
     def ingest_event(self, event: BehaviorEvent) -> None:
         """Add a single behavioral event for analysis."""
         self._events.append(event)
+        if len(self._events) > MAX_EVENTS:
+            self._events = self._events[-MAX_EVENTS:]
         self._event_window.append(event)
         self._prune_window()
 
@@ -219,6 +446,8 @@ class BehaviorEngine:
         cutoff = datetime.now() - timedelta(seconds=config.BEHAVIOR_SEQUENCE_WINDOW)
         self._event_window = [e for e in self._event_window
                               if e.timestamp and e.timestamp >= cutoff]
+        if len(self._event_window) > MAX_WINDOW_EVENTS:
+            self._event_window = self._event_window[-MAX_WINDOW_EVENTS:]
 
     def detect_patterns(self) -> list[BehaviorPattern]:
         """Scan the event window for matching detection rules."""

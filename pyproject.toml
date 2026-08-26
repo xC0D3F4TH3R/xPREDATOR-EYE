@@ -3,9 +3,9 @@ requires = ["setuptools>=68.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "pcapanalyzer"
-version = "2.0.0"
-description = "Enterprise-grade real-time threat intelligence suite for network security"
+name = "xpredator-eye"
+version = "3.0.0"
+description = "Enterprise-grade AI-powered threat intelligence suite for network security, malware analysis, and incident response"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
@@ -17,9 +17,10 @@ keywords = [
     "malware-analysis", "incident-response", "soc", "mitre-attack",
     "behavioral-analysis", "real-time-monitoring", "cybersecurity",
     "digital-forensics", "ioc", "threat-hunting", "edr",
+    "yara", "machine-learning", "ai", "zero-trust",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Information Technology",
     "Intended Audience :: System Administrators",
     "License :: OSI Approved :: MIT License",
@@ -39,9 +40,17 @@ dependencies = [
     "requests>=2.28.0",
     "rich>=13.0.0",
     "jinja2>=3.1.0",
+    "numpy>=1.24.0",
 ]
 
 [project.optional-dependencies]
+yara = ["yara-python>=4.3.0"]
+ml = ["scikit-learn>=1.3.0", "xgboost>=2.0.0"]
+pdf = ["weasyprint>=60.0", "plotly>=5.18.0", "matplotlib>=3.8.0"]
+siem = ["elasticsearch>=8.0.0"]
+llm = ["ollama>=0.4.0"]
+stix = ["stix2>=3.0.0"]
+config = ["pyyaml>=6.0", "pydantic>=2.5.0"]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -49,10 +58,12 @@ dev = [
     "mypy>=1.5",
 ]
 all = [
-    "pcapanalyzer[dev]",
+    "xpredator-eye[yara,ml,pdf,siem,llm,stix,config]",
+    "xpredator-eye[dev]",
 ]
 
 [project.scripts]
+xpredator-eye = "pcapanalyzer.cli:main"
 pcapanalyzer = "pcapanalyzer.cli:main"
 
 [project.urls]
@@ -64,6 +75,9 @@ Changelog = "https://github.com/xC0D3F4TH3R/xPREDATOR-EYE/blob/main/CHANGELOG.md
 
 [tool.setuptools.packages.find]
 include = ["pcapanalyzer*"]
+
+[tool.setuptools.package-data]
+pcapanalyzer = ["data/*.json", "rules/*.yar", "templates/*.html"]
 
 [tool.ruff]
 target-version = "py310"

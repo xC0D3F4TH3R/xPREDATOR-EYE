@@ -21,7 +21,7 @@ from rich.text import Text
 from rich.tree import Tree
 from rich import box
 
-from . import config
+from . import config, __version__
 from .models import (
     AnalysisResult, BehaviorPattern, BehavioralProfile, CampaignProfile,
     CarvedFile, CredentialArtifact, DamageAssessment, DNSQuery,
@@ -92,7 +92,7 @@ def render_terminal_report(result: AnalysisResult) -> None:
     """Render the complete terminal dashboard."""
     console.print()
     console.print(Panel.fit(
-        "[bold cyan]PcapMalAnalyzer[/] v1.0.0  --  Threat Intelligence Report",
+        f"[bold cyan]xPREDATOR-EYE[/] v{__version__}  --  Threat Intelligence Report",
         border_style="cyan",
     ))
 

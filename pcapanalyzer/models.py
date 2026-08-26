@@ -57,13 +57,45 @@ class Severity(enum.Enum):
 
     @property
     def numeric(self) -> int:
-        return {"info": 0, "low": 1, "medium": 2, "high": 3, "critical": 4}[self.value]
+        mapping = {
+            "info": 0,
+            "low": 1,
+            "medium": 2,
+            "high": 3,
+            "critical": 4,
+        }
+        return mapping[self.value]
 
-    def __ge__(self, other: Severity) -> bool:
+    def __ge__(self, other: object) -> bool:
+        if not isinstance(other, Severity):
+            return NotImplemented
         return self.numeric >= other.numeric
 
-    def __gt__(self, other: Severity) -> bool:
+    def __gt__(self, other: object) -> bool:
+        if not isinstance(other, Severity):
+            return NotImplemented
         return self.numeric > other.numeric
+
+    def __le__(self, other: object) -> bool:
+        if not isinstance(other, Severity):
+            return NotImplemented
+        return self.numeric <= other.numeric
+
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, Severity):
+            return NotImplemented
+        return self.numeric < other.numeric
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Severity):
+            return NotImplemented
+        return self.numeric == other.numeric
+
+    def __hash__(self) -> int:
+        return hash(self.numeric)
+
+    def __str__(self) -> str:
+        return self.value
 
 
 class Protocol(enum.Enum):
@@ -609,6 +641,7 @@ class ResponseCommand:
     action: ResponseAction = ResponseAction.NOTIFY_ADMIN
     platform: Platform = Platform.ANY
     command_str: str = ""
+    command_args: Optional[list[str]] = None
     description: str = ""
     requires_elevation: bool = False
     reversible: bool = True

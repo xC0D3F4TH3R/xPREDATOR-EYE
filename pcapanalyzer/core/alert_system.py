@@ -47,6 +47,8 @@ class AlertSystem:
         self._alert_log = output_dir / "alerts.jsonl" if output_dir else None
         if self._alert_log:
             ensure_directory(self._alert_log.parent)
+        self._cleanup_interval = 300  # 5 minutes
+        self._last_cleanup = time.monotonic()
 
     def register_callback(self, callback: Callable[[Alert], None]) -> None:
         """Register a function to be called for every new alert."""
@@ -80,6 +82,12 @@ class AlertSystem:
                 alert.timestamp = datetime.now()
 
             self._alerts.append(alert)
+
+            # Periodic cleanup of dedup cache
+            if now - self._last_cleanup > self._cleanup_interval:
+                cutoff = now - config.ALERT_DEDUP_WINDOW * 2
+                self._dedup_cache = {k: v for k, v in self._dedup_cache.items() if v > cutoff}
+                self._last_cleanup = now
 
             # Persist to disk
             self._persist_alert(alert)

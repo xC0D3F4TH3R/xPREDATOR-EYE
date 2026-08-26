@@ -42,7 +42,7 @@ KNOWN_ACTOR_FINGERPRINTS: list[dict] = [
         "sophistication": "expert",
         "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0005", "TA0006", "TA0011"],
         "techniques": ["T1566", "T1105", "T1059", "T1053", "T1003", "T1140"],
-        "indicators": ["WellMess", "SUNBURST", "玟蛛", "Hammer Toss"],
+        "indicators": ["WellMess", "SUNBURST", "Hammer Toss"],
     },
     {
         "name": "Lazarus Group",
@@ -70,6 +70,87 @@ KNOWN_ACTOR_FINGERPRINTS: list[dict] = [
         "mitre_tactics": ["TA0002", "TA0011"],
         "techniques": ["T1496", "T1059"],
         "indicators": ["stratum+tcp", "mining", "xmr", "coinhive", "cryptonight"],
+    },
+    {
+        "name": "APT41 (Double Dragon)",
+        "aliases": ["Double Dragon", "Winnti", "Barium", "Wicked Panda"],
+        "motivation": "espionage",
+        "sophistication": "expert",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0005", "TA0006", "TA0010"],
+        "techniques": ["T1195", "T1059", "T1547", "T1003", "T1041", "T1560"],
+        "indicators": ["ShadowPad", "PlugX", "CrossWalk", "lowkey"],
+    },
+    {
+        "name": "APT40 (Leviathan)",
+        "aliases": ["Leviathan", "Moses Staff", "GADOLINIUM"],
+        "motivation": "espionage",
+        "sophistication": "advanced",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0006", "TA0010"],
+        "techniques": ["T1566", "T1059", "T1003", "T1041", "T1505"],
+        "indicators": ["CHARTON", "RETEFE", "webshell"],
+    },
+    {
+        "name": "FIN7 (Carbanak)",
+        "aliases": ["Carbanak", "Navigator", "Anunak"],
+        "motivation": "financial",
+        "sophistication": "advanced",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0006", "TA0008"],
+        "techniques": ["T1566", "T1059", "T1053", "T1003", "T1021", "T1055"],
+        "indicators": ["Carbanak", "Dridex", "Cobalt Strike"],
+    },
+    {
+        "name": "Sandworm Team",
+        "aliases": "Voodoo Bear",
+        "motivation": "destructive",
+        "sophistication": "expert",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0005", "TA0040"],
+        "techniques": ["T1190", "T1059", "T1486", "T1489", "T1498"],
+        "indicators": ["NotPetya", "Industroyer", "CaddyWiper", "Cyclops Blink"],
+    },
+    {
+        "name": "Turla (Snake/Uroburos)",
+        "aliases": ["Snake", "Uroburos", "Venomous Bear", "Waterbug"],
+        "motivation": "espionage",
+        "sophistication": "innovator",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0005", "TA0006", "TA0007"],
+        "techniques": ["T1566", "T1059", "T1003", "T1048", "T1071", "T1082"],
+        "indicators": ["Snake", "Mosquito", "VPNFilter", "CompuTrace"],
+    },
+    {
+        "name": "OilRig (APT34)",
+        "aliases": ["APT34", "Hazel Sand", "Cobalt Gypsy"],
+        "motivation": "espionage",
+        "sophistication": "advanced",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0006", "TA0010"],
+        "techniques": ["T1566", "T1059", "T1053", "T1505", "T1041"],
+        "indicators": ["ThreeDollars", "QUADAGENT", "Helminth"],
+    },
+    {
+        "name": "Equation Group",
+        "aliases": ["EQGRP", "The Equation Group"],
+        "motivation": "espionage",
+        "sophistication": "innovator",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0005", "TA0006"],
+        "techniques": ["T1190", "T1059", "T1003", "T1547", "T1027"],
+        "indicators": ["EternalBlue", "DoublePulsar", "FANNY", "EquationDrug"],
+    },
+    {
+        "name": "Kimsuky",
+        "aliases": ["Thallium", "Velvet Chollima"],
+        "motivation": "espionage",
+        "sophistication": "advanced",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0006", "TA0007"],
+        "techniques": ["T1566", "T1059", "T1003", "T1071", "T1083"],
+        "indicators": ["GoldDragon", "BabyShark", "AppleSeed"],
+    },
+    {
+        "name": "Volt Typhoon",
+        "aliases": ["Bronze Silhouette", "Insidious Taurus"],
+        "motivation": "espionage",
+        "sophistication": "advanced",
+        "mitre_tactics": ["TA0001", "TA0002", "TA0003", "TA0005", "TA0007", "TA0008"],
+        "techniques": ["T1133", "T1059", "T1021", "T1003", "T1046", "T1572"],
+        "indicators": ["living_off_the_land", "FOXSHELL", "SOCKS5 proxy"],
     },
 ]
 
@@ -193,13 +274,14 @@ class ThreatActorProfiler:
 
         # Determine objectives from TTPs
         objectives = set()
-        if any(t.value.startswith("T148") for t in all_tactics):
+        tactic_values = [t.value for t in all_tactics]
+        if any(tv.startswith("T148") for tv in tactic_values):
             objectives.add("Data Destruction")
-        if any(t.value.startswith("T104") for t in all_tactics):
+        if any(tv.startswith("T104") for tv in tactic_values):
             objectives.add("Data Exfiltration")
-        if any(t.value.startswith("T100") for t in all_tactics):
+        if any(tv.startswith("T100") for tv in tactic_values):
             objectives.add("Credential Theft")
-        if any(t.value.startswith("T102") for t in all_tactics):
+        if any(tv.startswith("T102") for tv in tactic_values):
             objectives.add("Lateral Movement")
         campaign.objectives = list(objectives)
 

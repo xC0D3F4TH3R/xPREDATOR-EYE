@@ -1,0 +1,174 @@
+Now I have a complete picture. Here is the full master list of everything needed:
+xPREDATOR-EYE — Complete Production Readiness Checklist
+PHASE 1: CRITICAL BUGS (App crashes on usage)
+1.1 — Runtime Crashes
+#	File	Issue	Fix
+1	cli.py:290	Severity referenced but never imported — NameError on every analyze run	Add from .models import Severity
+2	cli.py:330	Broken ternary f"..." if result.damage_assessment else "N/A" — f-string condition is outside the f-string	Rewrite the conditional properly
+3	cli.py:309	args.quiet accessed in live mode but --quiet only defined on analyze subparser — AttributeError	Add --quiet to both subparsers
+4	ingestion.py:102	Calls scapy_packet.summary() which crashes on truncated/malformed packets — no try/except around it	Wrap in try/except
+5	ingestion.py:103	Accesses pkt[TCP].sport without checking if TCP layer exists — IndexError on UDP packets	Guard with haslayer(TCP)
+6	ingestion.py:121	Calls pkt[Ether].dst but some pcaps have no Ethernet layer (raw IP)	Guard with haslayer(Ether)
+7	extractor.py:89	Iterates reassembled_streams which is None when no streams found — TypeError	Add if streams is None: return []
+8	ingestion.py:100	flow_bytes += int(pkt_len) — pkt_len can be None for malformed packets	Add None check
+1.2 — Logic Bugs
+#	File	Issue	Fix
+9	models.py:62-66	Severity only has __ge__ and __gt__ — max(), sorted(), and <= comparisons fail silently	Add __le__, __lt__, __eq__, __hash__
+10	orchestrator.py	_analysis_loop runs on daemon thread but time.sleep(60s) — events between cycles are lost	Reduce interval or add event buffering
+11	process_monitor.py:180-182	proc.cpu_percent() called twice — second call returns 0% (psutil returns delta between calls)	Store first result, don't call twice
+12	file_monitor.py:120	File size stored as stat.st_size (int) but FileChange.size is int — comparison works but stat.st_mtime is float while FileChange.timestamp is datetime — type mismatch on baseline comparison	Normalize timestamps
+13	config.py:23-24	QUARANTINE_DIR = Path(...) / "quarantine" uses Path(__file__).resolve().parent.parent which points to random location depending on install method	Use user home or configurable path
+14	parser.py	TLS ClientHello parsing assumes specific scapy layer names — breaks on scapy version differences	Already partially fixed, needs more testing
+PHASE 2: MEMORY & STABILITY (Crashes after running for minutes/hours)
+#	File	Issue	Fix
+15	ingestion.py	flow_list is an unbounded list — PCAP with 1M flows = OOM	Add max_flows limit
+16	ingestion.py	seen_src_ips / seen_dst_ips are unbounded sets	Cap at 100K, use HyperLogLog approximation
+17	behavior_engine.py	_events list grows forever — never trimmed	Add circular buffer or time-based eviction
+18	alert_system.py	_alerts list grows forever, _recent_keys dict grows forever	Add max-size with LRU eviction
+19	models.py:447	ThreatActor.activity_log unbounded list	Add max 1000 entries
+20	damage_assessor.py:111	_assess_confidentiality allocates dict[int, int] indexed by ALL port numbers — 65K entries	Use defaultdict with counter
+21	orchestrator.py	No memory monitoring — live capture can silently consume all RAM	Add periodic memory checks
+22	process_monitor.py	_snapshot_all() hashes EXE files of every process — hundreds of disk reads per snapshot	Add optional hashing, skip system processes
+PHASE 3: DATA PIPELINE (The core analysis actually works with real data)
+#	Task	Detail
+23	Test analyze mode with real PCAP	Download malware-traffic-analysis.net sample, run full pipeline, verify output
+24	Test DNS parsing	Verify DNS queries extracted correctly from real PCAP
+25	Test HTTP parsing	Verify HTTP requests extracted correctly
+26	Test TLS/SNI parsing	Verify TLS metadata extracted correctly
+27	Test file carving	Verify extracted files are valid
+28	Test IOC extraction	Verify IPs, domains, hashes extracted correctly
+29	Test blocklist matching	Verify default_blocklist.json matches work
+30	Test behavioral analysis	Verify pattern detection triggers on real malicious traffic
+31	Test damage assessment	Calibrate scoring against known-bad vs benign traffic
+32	Test report generation	Verify JSON output is valid, parseable, SIEM-compatible
+33	Test CLI end-to-end	python -m pcapanalyzer analyze sample.pcap -o output/ produces complete output
+PHASE 4: THREAT DETECTION CALIBRATION
+#	Task	Detail
+34	Calibrate BEHAVIOR_SCORE_SUSPICIOUS (currently 0.4) against real traffic	Too low = false positives, too high = missed threats
+35	Calibrate BEHAVIOR_SCORE_MALICIOUS (currently 0.7)	Same
+36	Calibrate DNS_ENTROPY_THRESHOLD (currently 3.5) against real DGA samples	Test with known DGA domains
+37	Validate SEQUENCE_RULES in behavior_engine.py against MITRE ATT&CK	Each rule should map to real attack patterns
+38	Validate THREAT_ACTOR_FINGERPRINTS against real APT TTPs	Current fingerprints may be too generic
+39	Test ThreatActorProfiler attribution against known APT PCAPs	Verify APT28/Lazarus attribution confidence
+40	Test DamageAssessor scoring with real exfiltration traffic	Calibrate financial impact estimates
+41	Add detection rules for modern techniques	Fileless malware, LOLBins, DNS-over-HTTPS, encrypted C2
+42	Add more SEQUENCE_RULES	Currently only 8 — need 20+ for professional use
+PHASE 5: TESTING (146 → 500+ tests)
+5.1 — Missing Unit Tests
+#	Module	Missing Tests
+43	ingestion.py	Zero tests — validate_pcap(), extract_metadata(), generate_flows() all untested
+44	parser.py	Zero tests — parse_dns(), parse_http(), parse_tls(), parse_credentials() untested
+45	extractor.py	Zero tests — reassemble_streams(), carve_files() untested
+46	reporter.py	render_terminal_report() untested
+47	behavior_engine.py	_map_event_to_ttp() untested, detect_patterns() edge cases untested
+48	damage_assessor.py	_assess_confidentiality/integrity/availability/financial() all untested
+49	orchestrator.py	Zero tests — start(), stop(), _analysis_loop() untested
+50	dashboard.py	Zero tests
+5.2 — Missing Test Categories
+#	Category	Need
+51	Integration tests	Full pipeline: PCAP → ingestion → parse → extract → intelligence → report
+52	End-to-end tests	CLI invocation with real PCAP, verify output files
+53	Performance tests	Large PCAP (1GB+) handling without OOM
+54	Stress tests	100K+ flow PCAP processing time and memory
+55	Platform tests	Windows + Linux + macOS specific behavior
+56	Edge case tests	Empty PCAP, corrupt PCAP, 0-byte file, malformed packets
+57	Concurrency tests	Thread safety of shared state in behavior engine
+58	Regression tests	Test data (PCAP samples) committed to repo
+PHASE 6: LIVE MONITORING (The live mode actually works)
+#	Task	Detail
+59	Test live_capture.py with real tshark on Windows	Verify tshark is detected, streaming works
+60	Test live_capture.py with real tshark on Linux	Verify root/sudo permissions handled
+61	Fix process_monitor.py startup blocking	_snapshot_all() takes 30+ seconds on Windows — must be async
+62	Add graceful Ctrl+C handling	Live mode must save state on interrupt
+63	Add interface auto-detection	live --interfaces should list real interfaces
+64	Test file_monitor.py on all platforms	Platform defaults load correct paths
+65	Add process whitelist	Don't alert on system processes
+66	Add rate limiting for live events	Prevent alert storms
+67	Test long-running capture (1+ hour)	Memory usage must stay stable
+PHASE 7: RESPONSE ENGINE
+#	Task	Detail
+68	Test BLOCK_IP on Windows	Verify netsh advfirewall command works
+69	Test BLOCK_IP on Linux	Verify iptables command works
+70	Test KILL_PROCESS on Windows	Verify taskkill /F /PID works
+71	Test KILL_PROCESS on Linux	Verify kill -9 works
+72	Test ISOLATE_HOST	Verify network isolation command
+73	Add macOS support	Currently no macOS-specific commands
+74	Add rollback support	Every action should be reversible
+75	Add response dry-run logging	Log what WOULD happen without doing it
+76	Test playbook trigger matching	Verify keyword matching against real alert titles
+77	Add custom playbook support	Load playbooks from YAML files
+PHASE 8: CI/CD & AUTOMATION (Missing entirely)
+#	File to Create	Purpose
+78	.github/workflows/ci.yml	Run tests on every push/PR
+79	.github/workflows/lint.yml	ruff + mypy on every push
+80	.github/workflows/docker.yml	Build + push Docker image
+81	.github/workflows/release.yml	Publish to PyPI on tag
+82	.github/dependabot.yml	Auto-update dependencies
+83	.github/ISSUE_TEMPLATE/bug_report.md	Structured bug reports
+84	.github/ISSUE_TEMPLATE/feature_request.md	Structured feature requests
+85	.github/PULL_REQUEST_TEMPLATE.md	PR checklist
+86	.github/CODEOWNERS	Review routing
+87	.pre-commit-config.yaml	Pre-commit hooks
+88	Makefile	make test, make lint, make docker
+PHASE 9: PACKAGING & DISTRIBUTION
+#	Issue	Fix
+89	data/default_blocklist.json not included in package	Add [tool.setuptools.package-data]
+90	requirements.txt says "PcapMalAnalyzer"	Update header to xPREDATOR-EYE
+91	requirements.txt pins exact, pyproject.toml uses >=	Align versions
+92	No [project.optional-dependencies] for dev	Add dev = ["pytest", "ruff", "mypy"]
+93	No MANIFEST.in	Add to include data files in sdist
+94	Version hardcoded in 3 places	Centralize in __init__.py or pyproject.toml
+95	No PyPI-ready metadata	Add long_description, long_description_content_type
+96	No entry points for CLI	Add [project.scripts] pcapanalyzer = "pcapanalyzer.cli:main"
+97	setup.cfg not needed	Already removed, verify no stale files
+98	No __version__ accessible at runtime	Add __version__ = "2.0.0" to __init__.py
+PHASE 10: DOCUMENTATION
+#	File	Detail
+99	README.md	Update: remove "beta" badge, add installation verification, add troubleshooting
+100	docs/INSTALLATION.md	Step-by-step for Ubuntu, Kali, Windows, macOS
+101	docs/USAGE.md	Complete CLI reference with examples
+102	docs/ARCHITECTURE.md	Detailed module interactions, data flow diagrams
+103	docs/DEPLOYMENT.md	SOC deployment guide (server, agents, dashboards)
+104	docs/TROUBLESHOOTING.md	Common errors and fixes
+105	docs/CONTRIBUTING.md	Move from root, expand with development guide
+106	docs/API.md	Module-by-module API documentation
+107	docs/THREAT_DETECTION.md	How detection rules work, how to add custom ones
+108	Inline docstrings	Many functions have no docstrings (identified in audit)
+PHASE 11: PERFORMANCE
+#	Task	Detail
+109	Benchmark PCAP parsing speed	Target: >100K packets/second
+110	Benchmark file carving speed	Target: >50MB/s
+111	Benchmark live capture throughput	Target: no packet drops at 1Gbps
+112	Profile memory usage	Target: <500MB for 100K flow PCAP
+113	Add --max-memory flag	Auto-throttle if memory exceeds limit
+114	Use orjson for JSON output	10x faster than stdlib json
+115	Consider uvloop for async processing	2-4x faster event loop
+116	Add PCAP streaming (chunked reading)	Don't load entire PCAP into memory
+PHASE 12: SECURITY HARDENING
+#	Task	Detail
+117	Add input validation	All CLI args validated before use
+118	Sanitize file paths	Prevent path traversal in carved files
+119	Validate API keys	Check format before sending to VT/AbuseIPDB
+120	Add privilege check	Warn if running as root unnecessarily
+121	No secrets in code	Audit for hardcoded keys
+122	Add file size limits	Don't process PCAPs >10GB without --force
+123	Rate limit API calls	VT: 4/min, AbuseIPDB: 60/min
+Summary by Phase
+Phase	Items	Priority
+1 — Critical Bugs	14	BLOCKING — app crashes
+2 — Memory & Stability	8	BLOCKING — runs out of memory
+3 — Data Pipeline	11	BLOCKING — never tested with real data
+4 — Detection Calibration	9	HIGH — catches real threats
+5 — Testing	16	HIGH — confidence in correctness
+6 — Live Monitoring	9	HIGH — core feature works
+7 — Response Engine	10	HIGH — actions actually work
+8 — CI/CD	11	MEDIUM — automation
+9 — Packaging	10	MEDIUM — installable
+10 — Documentation	10	MEDIUM — usable by others
+11 — Performance	8	MEDIUM — scalable
+12 — Security	7	MEDIUM — hardened
+TOTAL	123 items	 
+The honest truth: You have ~70% of the architecture and ~30% of the production readiness. The architecture is genuinely excellent — the layered design, the separation of concerns, the model system. But the 123 items above represent the difference between "code that compiles" and "a tool that protects networks."
+Start with Phases 1-3 (33 items). Once those are done, the tool will actually work end-to-end with real network data. Everything after that is making it faster, safer, and more polished.
+Want me to start executing Phase 1 (critical bugs) right now?
+▣  Build · auto/coding · 10m 29s

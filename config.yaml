@@ -1,0 +1,143 @@
+# xPREDATOR-EYE Configuration
+# Copy to ~/.xpredator-eye/config.yaml and customize
+
+# General settings
+general:
+  log_level: INFO
+  output_dir: ~/.xpredator-eye/output
+  temp_dir: ~/.xpredator-eye/tmp
+  quarantine_dir: ~/.xpredator-eye/quarantine
+
+# Capture settings
+capture:
+  snaplen: 65535
+  buffer_size: 134217728  # 128MB
+  promiscuous: true
+  packet_queue_size: 50000
+  capture_filter: ""
+
+# DNS analysis
+dns:
+  entropy_threshold: 3.5
+  dga_min_label_length: 12
+  high_volume_threshold: 5000
+  tunnel_size_threshold: 512
+
+# Behavioral analysis
+behavioral:
+  min_events_per_pattern: 3
+  sequence_window: 300  # 5 minutes
+  suspicious_threshold: 0.4
+  malicious_threshold: 0.7
+  critical_threshold: 0.9
+
+# Process monitoring
+process:
+  poll_interval: 2.0
+  high_cpu_threshold: 80.0
+  high_memory_threshold: 500000000  # 500MB
+  suspicious_process_names:
+    - mimikatz
+    - psexec
+    - meterpreter
+    - cobaltstrike
+    - csrss
+
+# File monitoring
+file:
+  poll_interval: 5.0
+  max_file_size: 104857600  # 100MB
+
+# Alert settings
+alert:
+  dedup_window: 300  # 5 minutes
+  max_alerts_per_minute: 100
+  auto_correlate: true
+  correlation_window: 600  # 10 minutes
+
+# Response settings
+response:
+  dry_run_default: true
+  require_confirmation: true
+  max_auto_blocks: 10
+  cooldown_period: 60
+
+# Damage assessment thresholds
+damage:
+  critical_score: 9.0
+  high_score: 7.0
+  medium_score: 4.0
+  financial_risk_multiplier: 10000
+
+# Intelligence settings
+intelligence:
+  vt_rate_limit: 4
+  vt_period: 60
+  abuseipdb_rate_limit: 1
+  abuseipdb_period: 60
+  auto_enrich: true
+
+# ML settings
+ml:
+  model_path: ~/.xpredator-eye/models/classifier.pkl
+  anomaly_contamination: 0.1
+  confidence_threshold: 0.7
+
+# YARA settings
+yara:
+  rules_dir: ~/.xpredator-eye/rules
+  scan_timeout: 30
+  max_file_size: 104857600  # 100MB
+
+# LLM settings
+llm:
+  enabled: false
+  model: llama3.2:3b
+  ollama_url: http://localhost:11434
+  temperature: 0.3
+  max_tokens: 1024
+
+# SIEM settings
+siem:
+  elasticsearch:
+    enabled: false
+    hosts: ["http://localhost:9200"]
+    index_prefix: xpredator
+  splunk:
+    enabled: false
+    hec_url: ""
+    hec_token: ""
+    source: xpredator
+
+# Reporting settings
+reporting:
+  classification: "UNCLASSIFIED // FOR OFFICIAL USE ONLY"
+  analyst: "xPREDATOR-EYE Automated Analysis"
+  include_iocs: true
+  include_mitre: true
+  include_compliance: true
+
+# Platform-specific critical paths
+platforms:
+  windows:
+    - C:\\Windows\\System32
+    - C:\\Windows\\Temp
+    - C:\\Users\\*\\AppData\\Local\\Temp
+    - C:\\Users\\*\\Downloads
+  linux:
+    - /tmp
+    - /var/tmp
+    - /dev/shm
+    - /etc/cron.d
+    - /etc/crontab
+  macos:
+    - /tmp
+    - /var/tmp
+    - /Users/*/Downloads
+    - /Library/LaunchDaemons
+
+# Logging
+logging:
+  format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+  file: null  # set to path to enable file logging
