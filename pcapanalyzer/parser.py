@@ -66,6 +66,21 @@ logger = get_logger("parser")
 _CRED_RE = compile_patterns(config.CREDENTIAL_PATTERNS)
 
 
+def packet_payload_bytes(pkt) -> bytes:
+    """Extract transport payload bytes regardless of Scapy's layer dissection.
+
+    Scapy loads its HTTP layer globally, which dissects HTTP packets into an
+    ``HTTPRequest`` layer instead of ``Raw``. Serializing the TCP/UDP payload
+    yields the original application bytes either way.
+    """
+    for layer in (TCP, UDP):
+        if pkt.haslayer(layer):
+            payload = pkt[layer].payload
+            if payload is not None:
+                return bytes(payload)
+    return b""
+
+
 # ---------------------------------------------------------------------------
 # DNS Parsing
 # ---------------------------------------------------------------------------
@@ -183,10 +198,13 @@ def parse_http(filepath: str) -> list[HTTPRequest]:
                 try:
                     if not pkt.haslayer(TCP):
                         continue
-                    if not pkt.haslayer(Raw):
-                        continue
 
-                    payload = bytes(pkt[Raw].load)
+                    # Read the TCP payload directly. Scapy loads its HTTP layer
+                    # globally, which dissects HTTP packets into an HTTPRequest
+                    # layer (no Raw), so the Raw-layer gate is unreliable.
+                    payload = packet_payload_bytes(pkt)
+                    if not payload:
+                        continue
                     # Quick check: does it look like an HTTP request line?
                     if not _is_http_request(payload):
                         continue
@@ -433,10 +451,10 @@ def parse_credentials(filepath: str) -> list[CredentialArtifact]:
         with PcapReader(filepath) as reader:
             for pkt in reader:
                 try:
-                    if not pkt.haslayer(Raw):
+                    payload = packet_payload_bytes(pkt)
+                    if not payload:
                         continue
 
-                    payload = bytes(pkt[Raw].load)
                     text = payload.decode("utf-8", errors="ignore")
                     if not text:
                         continue

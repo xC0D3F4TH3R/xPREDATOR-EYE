@@ -14,10 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Generator, Optional
 
-from scapy.all import PcapReader, IP, IPv6, TCP, UDP, Raw  # type: ignore[import-untyped]
+from scapy.all import PcapReader, IP, IPv6, TCP, UDP  # type: ignore[import-untyped]
 
 from . import config
 from .models import CarvedFile, FileType, Severity
+from .parser import packet_payload_bytes
 from .utils import (
     get_logger,
     compute_hashes,
@@ -101,12 +102,14 @@ def reassemble_streams(
                     ip_layer = pkt.getlayer(IP) or pkt.getlayer(IPv6)
                     if ip_layer is None:
                         continue
-                    if not pkt.haslayer(Raw):
+                    if not (pkt.haslayer(TCP) or pkt.haslayer(UDP)):
                         continue
 
                     src_ip = getattr(ip_layer, "src", "0.0.0.0")
                     dst_ip = getattr(ip_layer, "dst", "0.0.0.0")
-                    payload = bytes(pkt[Raw].load)
+                    payload = packet_payload_bytes(pkt)
+                    if not payload:
+                        continue
                     ts = float(pkt.time)
 
                     src_port = dst_port = 0

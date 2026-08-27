@@ -257,3 +257,233 @@ REPORT_MAX_EVENTS: int = 1000
 
 LOG_FORMAT: str = "%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s"
 LOG_DATE_FORMAT: str = "%Y-%m-%d %H:%M:%S"
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Runtime-overridable settings (also sourced from ~/.xpredator-eye/config.yaml)
+# ═══════════════════════════════════════════════════════════════════════════
+
+LOG_LEVEL: int = 20  # logging.INFO
+LOG_FILE: str | None = None
+
+BEHAVIOR_SUSPICIOUS_THRESHOLD: float = 0.4
+BEHAVIOR_MALICIOUS_THRESHOLD: float = 0.7
+BEHAVIOR_CRITICAL_THRESHOLD: float = 0.9
+
+ALERT_AUTO_CORRELATE: bool = True
+ALERT_CORRELATION_WINDOW: float = 600.0
+
+RESPONSE_REQUIRE_CONFIRMATION: bool = True
+RESPONSE_MAX_AUTO_BLOCKS: int = 10
+RESPONSE_COOLDOWN_PERIOD: int = 60
+
+ML_MODEL_PATH: Path = _APP_ROOT / "models" / "classifier.pkl"
+ML_ANOMALY_CONTAMINATION: float = 0.1
+ML_CONFIDENCE_THRESHOLD: float = 0.7
+
+YARA_RULES_DIR: Path = _APP_ROOT / "rules"
+YARA_SCAN_TIMEOUT: int = 30
+
+LLM_ENABLED: bool = False
+LLM_MODEL: str = "llama3.2:3b"
+OLLAMA_URL: str = "http://localhost:11434"
+LLM_TEMPERATURE: float = 0.3
+LLM_MAX_TOKENS: int = 1024
+
+SIEM_ELASTICSEARCH_ENABLED: bool = False
+SIEM_ELASTICSEARCH_HOSTS: list[str] = ["http://localhost:9200"]
+SIEM_ELASTICSEARCH_INDEX_PREFIX: str = "xpredator"
+
+SIEM_SPLUNK_ENABLED: bool = False
+SIEM_SPLUNK_HEC_URL: str = ""
+SIEM_SPLUNK_HEC_TOKEN: str = ""
+SIEM_SPLUNK_SOURCE: str = "xpredator"
+
+DEFAULT_CLASSIFICATION: str = "UNCLASSIFIED // FOR OFFICIAL USE ONLY"
+
+USER_CONFIG_PATH = Path(
+    os.environ.get("PCAPANALYZER_CONFIG", Path.home() / ".xpredator-eye" / "config.yaml")
+)
+
+
+def load_user_config() -> Path | None:
+    """Apply overrides from ``USER_CONFIG_PATH`` (a ``config.yaml`` file).
+
+    Supports the documented configuration schema. Values are applied onto the
+    module-level constants so every consumer picks them up at import time.
+    """
+    path = USER_CONFIG_PATH
+    if not path.exists():
+        # Fall back to a project-bundled config.yaml if present (repo root).
+        bundled = Path(__file__).resolve().parent.parent / "config.yaml"
+        if bundled.exists():
+            path = bundled
+        else:
+            return None
+
+        try:
+            import yaml  # type: ignore[import-not-found]
+        except ImportError:
+            return None
+
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        g = data.get("general") or {}
+        c = data.get("capture") or {}
+        d = data.get("dns") or {}
+        b = data.get("behavioral") or {}
+        p = data.get("process") or {}
+        fo = data.get("file") or {}
+        a = data.get("alert") or {}
+        r = data.get("response") or {}
+        da = data.get("damage") or {}
+        ml = data.get("ml") or {}
+        ya = data.get("yara") or {}
+        llm = data.get("llm") or {}
+        siem = (data.get("siem") or {}).get("elasticsearch") or {}
+        splunk = (data.get("siem") or {}).get("splunk") or {}
+        rep = data.get("reporting") or {}
+        lg = data.get("logging") or {}
+
+        _MB = 1024 * 1024
+
+        def _get(key, section, default=None):
+            v = section.get(key)
+            return default if v is None else v
+
+        # General
+        if _get("log_level", g):
+            LOG_LEVEL = getattr(__import__("logging"), str(_get("log_level", g)).upper(), 20)
+            globals()["LOG_LEVEL"] = LOG_LEVEL
+        if _get("output_dir", g):
+            globals()["DEFAULT_OUTPUT_DIR"] = Path(str(_get("output_dir", g))).expanduser()
+        if _get("temp_dir", g):
+            globals()["TEMP_DIR"] = Path(str(_get("temp_dir", g))).expanduser()
+        if _get("quarantine_dir", g):
+            globals()["QUARANTINE_DIR"] = Path(str(_get("quarantine_dir", g))).expanduser()
+        if _get("file", lg):
+            globals()["LOG_FILE"] = str(_get("file", lg))
+
+        # Capture
+        if _get("snaplen", c):
+            globals()["CAPTURE_SNAPLEN"] = int(_get("snaplen", c))
+        if _get("buffer_size", c):
+            globals()["CAPTURE_BUFFER_MB"] = max(1, int(_get("buffer_size", c)) // _MB)
+        if _get("promiscuous", c) is not None:
+            globals()["CAPTURE_PROMISCUOUS"] = bool(_get("promiscuous", c))
+        if _get("packet_queue_size", c):
+            globals()["LIVE_PACKET_QUEUE_SIZE"] = int(_get("packet_queue_size", c))
+        if _get("capture_filter", c) is not None:
+            globals()["CAPTURE_FILTER_DEFAULT"] = str(_get("capture_filter", c))
+
+        # DNS
+        if _get("entropy_threshold", d):
+            globals()["DNS_ENTROPY_THRESHOLD"] = float(_get("entropy_threshold", d))
+        if _get("dga_min_label_length", d):
+            globals()["DNS_DGA_MIN_LABEL_LENGTH"] = int(_get("dga_min_label_length", d))
+        if _get("high_volume_threshold", d):
+            globals()["DNS_HIGH_VOLUME_THRESHOLD"] = int(_get("high_volume_threshold", d))
+        if _get("tunnel_size_threshold", d):
+            globals()["DNS_TUNNEL_SIZE_THRESHOLD"] = int(_get("tunnel_size_threshold", d))
+
+        # Behavioral
+        if _get("sequence_window", b):
+            globals()["BEHAVIOR_SEQUENCE_WINDOW"] = float(_get("sequence_window", b))
+        if _get("suspicious_threshold", b):
+            globals()["BEHAVIOR_SUSPICIOUS_THRESHOLD"] = float(_get("suspicious_threshold", b))
+        if _get("malicious_threshold", b):
+            globals()["BEHAVIOR_MALICIOUS_THRESHOLD"] = float(_get("malicious_threshold", b))
+        if _get("critical_threshold", b):
+            globals()["BEHAVIOR_CRITICAL_THRESHOLD"] = float(_get("critical_threshold", b))
+
+        # Process monitor
+        if _get("poll_interval", p):
+            globals()["PROCESS_POLL_INTERVAL"] = float(_get("poll_interval", p))
+        if _get("high_cpu_threshold", p):
+            globals()["PROCESS_CPU_SUSPICIOUS"] = float(_get("high_cpu_threshold", p))
+        if _get("high_memory_threshold", p):
+            globals()["PROCESS_MEMORY_SUSPICIOUS_MB"] = max(1, int(_get("high_memory_threshold", p)) // _MB)
+
+        # File monitor
+        if _get("poll_interval", fo):
+            globals()["FILE_MONITOR_INTERVAL"] = float(_get("poll_interval", fo))
+
+        # Alerts
+        if _get("dedup_window", a):
+            globals()["ALERT_DEDUP_WINDOW"] = float(_get("dedup_window", a))
+        if _get("max_alerts_per_minute", a):
+            globals()["ALERT_MAX_PER_MINUTE"] = int(_get("max_alerts_per_minute", a))
+        if _get("auto_correlate", a) is not None:
+            globals()["ALERT_AUTO_CORRELATE"] = bool(_get("auto_correlate", a))
+        if _get("correlation_window", a):
+            globals()["ALERT_CORRELATION_WINDOW"] = float(_get("correlation_window", a))
+
+        # Response
+        if _get("dry_run_default", r) is not None:
+            globals()["RESPONSE_DRY_RUN_DEFAULT"] = bool(_get("dry_run_default", r))
+        if _get("require_confirmation", r) is not None:
+            globals()["RESPONSE_REQUIRE_CONFIRMATION"] = bool(_get("require_confirmation", r))
+        if _get("max_auto_blocks", r):
+            globals()["RESPONSE_MAX_AUTO_BLOCKS"] = int(_get("max_auto_blocks", r))
+        if _get("cooldown_period", r):
+            globals()["RESPONSE_COOLDOWN_PERIOD"] = int(_get("cooldown_period", r))
+
+        # Damage assessment
+        if _get("critical_score", da):
+            globals()["DAMAGE_SCORE_CRITICAL"] = float(_get("critical_score", da))
+        if _get("high_score", da):
+            globals()["DAMAGE_SCORE_HIGH"] = float(_get("high_score", da))
+        if _get("medium_score", da):
+            globals()["DAMAGE_SCORE_MEDIUM"] = float(_get("medium_score", da))
+
+        # ML
+        if _get("model_path", ml):
+            globals()["ML_MODEL_PATH"] = Path(str(_get("model_path", ml))).expanduser()
+        if _get("anomaly_contamination", ml):
+            globals()["ML_ANOMALY_CONTAMINATION"] = float(_get("anomaly_contamination", ml))
+        if _get("confidence_threshold", ml):
+            globals()["ML_CONFIDENCE_THRESHOLD"] = float(_get("confidence_threshold", ml))
+
+        # YARA
+        if _get("rules_dir", ya):
+            globals()["YARA_RULES_DIR"] = Path(str(_get("rules_dir", ya))).expanduser()
+        if _get("scan_timeout", ya):
+            globals()["YARA_SCAN_TIMEOUT"] = int(_get("scan_timeout", ya))
+
+        # LLM
+        if _get("enabled", llm) is not None:
+            globals()["LLM_ENABLED"] = bool(_get("enabled", llm))
+        if _get("model", llm):
+            globals()["LLM_MODEL"] = str(_get("model", llm))
+        if _get("ollama_url", llm):
+            globals()["OLLAMA_URL"] = str(_get("ollama_url", llm))
+        if _get("temperature", llm):
+            globals()["LLM_TEMPERATURE"] = float(_get("temperature", llm))
+        if _get("max_tokens", llm):
+            globals()["LLM_MAX_TOKENS"] = int(_get("max_tokens", llm))
+
+        # SIEM (Elasticsearch)
+        if _get("enabled", siem) is not None:
+            globals()["SIEM_ELASTICSEARCH_ENABLED"] = bool(_get("enabled", siem))
+        if _get("hosts", siem):
+            globals()["SIEM_ELASTICSEARCH_HOSTS"] = [str(h) for h in siem["hosts"]]
+        if _get("index_prefix", siem):
+            globals()["SIEM_ELASTICSEARCH_INDEX_PREFIX"] = str(_get("index_prefix", siem))
+
+        # SIEM (Splunk HEC)
+        if _get("enabled", splunk) is not None:
+            globals()["SIEM_SPLUNK_ENABLED"] = bool(_get("enabled", splunk))
+        if _get("hec_url", splunk):
+            globals()["SIEM_SPLUNK_HEC_URL"] = str(_get("hec_url", splunk))
+        if _get("hec_token", splunk):
+            globals()["SIEM_SPLUNK_HEC_TOKEN"] = str(_get("hec_token", splunk))
+        if _get("source", splunk):
+            globals()["SIEM_SPLUNK_SOURCE"] = str(_get("source", splunk))
+
+        # Reporting
+        if _get("classification", rep):
+            globals()["DEFAULT_CLASSIFICATION"] = str(_get("classification", rep))
+
+        globals()["USER_CONFIG_PATH"] = path
+        return path
+
+
+load_user_config()

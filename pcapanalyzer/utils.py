@@ -35,6 +35,16 @@ def setup_logging(level: int = logging.INFO) -> logging.Logger:
             logging.Formatter(config.LOG_FORMAT, datefmt=config.LOG_DATE_FORMAT)
         )
         logger.addHandler(handler)
+        if config.LOG_FILE:
+            try:
+                Path(config.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
+                file_handler = logging.FileHandler(config.LOG_FILE, encoding="utf-8")
+                file_handler.setFormatter(
+                    logging.Formatter(config.LOG_FORMAT, datefmt=config.LOG_DATE_FORMAT)
+                )
+                logger.addHandler(file_handler)
+            except Exception:
+                pass
     logger.setLevel(level)
     return logger
 

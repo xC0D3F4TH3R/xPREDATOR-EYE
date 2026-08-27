@@ -76,7 +76,7 @@ tr:hover {{ background: #1c2333; }}
 </div>
 
 <div class="metrics">
-<div class="metric-card"><div class="metric-value risk-{overall_risk|lower}">{overall_risk}</div><div class="metric-label">Overall Risk</div></div>
+<div class="metric-card"><div class="metric-value risk-{overall_risk_lower}">{overall_risk}</div><div class="metric-label">Overall Risk</div></div>
 <div class="metric-card"><div class="metric-value">{alert_count}</div><div class="metric-label">Total Alerts</div></div>
 <div class="metric-card"><div class="metric-value">{ioc_count}</div><div class="metric-label">IOCs Identified</div></div>
 <div class="metric-card"><div class="metric-value">{threat_actor_count}</div><div class="metric-label">Threat Actors</div></div>
@@ -163,6 +163,7 @@ class HTMLReportGenerator:
             if score >= 70: overall_risk = "CRITICAL"
             elif score >= 45: overall_risk = "HIGH"
             elif score >= 20: overall_risk = "MEDIUM"
+        overall_risk_lower = overall_risk.lower()
 
         severities = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
         for a in result.alerts:
@@ -192,7 +193,8 @@ class HTMLReportGenerator:
             html = HTML_TEMPLATE.format(
                 report_id=report_id, report_date=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 analyst="xPREDATOR-EYE Automated Analysis", classification=classification,
-                overall_risk=overall_risk, alert_count=len(result.alerts), ioc_count=len(iocs),
+                overall_risk=overall_risk, overall_risk_lower=overall_risk_lower,
+                alert_count=len(result.alerts), ioc_count=len(iocs),
                 threat_actor_count=len(result.threat_actors),
                 damage_score=f"{result.damage_assessment.overall_score:.1f}" if result.damage_assessment else "0.0",
                 flow_count=len(result.flows),

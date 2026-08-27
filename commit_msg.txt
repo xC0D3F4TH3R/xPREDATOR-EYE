@@ -1,0 +1,33 @@
+xPREDATOR-EYE v3.0.0 - Production-grade threat intelligence suite
+
+Complete rewrite transforming PcapMalAnalyzer into enterprise-grade platform:
+
+NEW MODULES:
+- detection/yara_scanner.py + 15 malware YARA rules (ransomware, Cobalt Strike, Mimikatz, webshells, crypto miners, process injection, LOLBins, anti-forensics)
+- ml/feature_extractor.py (22 network flow features) + ml/classifier.py (XGBoost + Isolation Forest)
+- reporting/pdf_report.py (WeasyPrint government-grade PDFs with classification banners, MITRE heatmaps, NIST/ISO compliance)
+- reporting/html_report.py (interactive HTML with Plotly charts, search/filter, IOC export)
+- integrations/siem_integration.py (Elasticsearch, Splunk HEC, STIX 2.1 bundle export)
+- integrations/zeek_parser.py (conn.log, dns.log, http.log, ssl.log, files.log)
+- integrations/suricata_parser.py (EVE JSON streaming parser)
+- analysis/llm_analyzer.py (Ollama-powered malware explanation, exec summaries, remediation)
+- core/health_monitor.py (heartbeat, degradation detection, auto-restart)
+- detection/rules/malware.yar (15 default YARA rules)
+
+CORE FIXES:
+- Fixed Severity enum comparison (infinite recursion)
+- Fixed ThreatActorProfiler API mismatch
+- Fixed intelligence full_analysis() arg order
+- Fixed KillChainPhase enum usage (EXECUTION->EXPLOITATION, EXFILTRATION->ACTIONS_ON_OBJECTIVES)
+- Command injection prevention in response_engine (input sanitization, list args)
+- Memory bounds on FileMonitor (100K baseline, 10K changes/events)
+- AlertSystem dedup cache TTL cleanup
+- ResponseCommand added command_args field
+
+BEHAVIORAL ENGINE: 30+ detection rules (8 -> 30+) covering MITRE tactics
+THREAT ACTORS: 14 profiles (APT28, APT29, Lazarus, APT41, Sandworm, Turla, OilRig, Equation, Kimsuky, Volt Typhoon, FIN7, etc.)
+
+CLI: New flags --yara-rules, --ml-model, --pdf, --html, --stix, --siem-url, --llm, --llm-model, --classification
+CONFIG: config.yaml with 25+ sections, pyproject.toml with optional extras (yara, ml, pdf, siem, llm, stix)
+
+PACKAGING: version 3.0.0, proper entry points, package data inclusion

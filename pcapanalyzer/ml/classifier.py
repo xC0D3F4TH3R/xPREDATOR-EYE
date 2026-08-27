@@ -149,6 +149,43 @@ class NetworkClassifier:
             logger.error("ML batch prediction failed: %s", exc)
             return [{"class": "unknown", "confidence": 0.0} for _ in X]
 
+    def analyze_flows(self, vectors: list[list[float]]) -> list[dict]:
+        """Analyze per-flow feature vectors.
+
+        When a supervised model is loaded each flow is labelled; otherwise an
+        unsupervised Isolation Forest is fitted on the observed flows and every
+        flow is scored against its cohort (no synthetic data required).
+        """
+        if not ML_AVAILABLE or not vectors:
+            return []
+        if self._is_trained:
+            return self.predict_batch(vectors)
+
+        try:
+            X = np.asarray(vectors, dtype=float)
+            X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+            if X.ndim != 2 or X.shape[0] < 2:
+                return [{"class": "unknown", "confidence": 0.0,
+                         "anomaly_score": 0.0, "is_anomaly": False} for _ in vectors]
+            scaler = StandardScaler().fit(X)
+            X_scaled = np.nan_to_num(scaler.transform(X), nan=0.0, posinf=0.0, neginf=0.0)
+            detector = IsolationForest(n_estimators=100, contamination="auto", random_state=42)
+            detector.fit(X_scaled)
+            predictions = detector.predict(X_scaled)
+            scores = detector.score_samples(X_scaled)
+            return [
+                {
+                    "class": "anomalous" if pred == -1 else "benign",
+                    "confidence": float(min(1.0, max(0.0, -score))),
+                    "anomaly_score": float(max(0.0, -score)),
+                    "is_anomaly": bool(pred == -1),
+                }
+                for pred, score in zip(predictions, scores)
+            ]
+        except Exception as exc:
+            logger.error("Flow anomaly analysis failed: %s", exc)
+            return []
+
     def save_model(self, path: str | Path) -> None:
         """Save trained model to disk."""
         if not self._is_trained:

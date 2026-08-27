@@ -87,9 +87,10 @@ def build_parser() -> argparse.ArgumentParser:
     analyze_parser.add_argument("--html", type=Path, help="Generate HTML report")
     analyze_parser.add_argument("--stix", type=Path, help="Export IOCs as STIX bundle")
     analyze_parser.add_argument("--siem-url", help="Elasticsearch URL for SIEM push")
+    analyze_parser.add_argument("--siem-token", help="Splunk HEC token (with --siem-url pointing at Splunk)")
     analyze_parser.add_argument("--llm", action="store_true", help="Enable LLM analysis")
-    analyze_parser.add_argument("--llm-model", default="llama3.2:3b", help="Ollama model")
-    analyze_parser.add_argument("--classification", default="UNCLASSIFIED // FOR OFFICIAL USE ONLY")
+    analyze_parser.add_argument("--llm-model", default=config.LLM_MODEL, help="Ollama model")
+    analyze_parser.add_argument("--classification", default=config.DEFAULT_CLASSIFICATION)
 
     subparsers.add_parser("version", help="Show version")
     return parser
@@ -164,12 +165,20 @@ def _run_analyze(args: argparse.Namespace) -> int:
 
         # Stage 5: YARA Scanning
         yara_matches_all = []
-        if args.yara_rules:
+        rules_paths = [args.yara_rules] if args.yara_rules else []
+        if not rules_paths:
+            packaged = config.PROJECT_ROOT / "detection" / "rules"
+            if packaged.exists():
+                rules_paths.append(packaged)
+            if config.YARA_RULES_DIR.exists():
+                rules_paths.append(config.YARA_RULES_DIR)
+        if rules_paths:
             log.info("=== Stage 5A: YARA Scanning ===")
             try:
                 from .detection.yara_scanner import YaraScanner
                 yara_scanner = YaraScanner()
-                yara_scanner.load_rules(args.yara_rules)
+                for rp in rules_paths:
+                    yara_scanner.load_rules(rp)
                 for cf in result.carved_files:
                     if cf.quarantine_path:
                         matches = yara_scanner.scan_file(cf.quarantine_path)
@@ -239,30 +248,54 @@ def _run_analyze(args: argparse.Namespace) -> int:
 
         # Stage 10: ML Classification
         ml_result = None
-        if result.pcap_metadata:
-            log.info("=== Stage 8A: ML Classification ===")
-            try:
-                from .ml.feature_extractor import FeatureExtractor
-                from .ml.classifier import NetworkClassifier
-                ext_ml = FeatureExtractor()
+        log.info("=== Stage 8A: ML Classification ===")
+        try:
+            from .ml.feature_extractor import FeatureExtractor
+            from .ml.classifier import NetworkClassifier
+            ext_ml = FeatureExtractor()
+            classifier = NetworkClassifier()
+            model_path = args.ml_model or (
+                config.ML_MODEL_PATH if config.ML_MODEL_PATH.exists() else None
+            )
+            model_loaded = bool(model_path) and classifier.load_model(model_path)
+            flow_vectors = [
+                ff.to_vector()
+                for ff in ext_ml.extract_from_flows(
+                    result.flows, result.dns_queries, result.http_requests, result.tls_sessions,
+                )
+            ]
+            if flow_vectors:
+                per_flow = classifier.analyze_flows(flow_vectors)
+                anomalous = [r for r in per_flow if r.get("is_anomaly")]
+                ml_result = {
+                    "flows_analyzed": len(per_flow),
+                    "anomalous_flows": len(anomalous),
+                    "model_source": "pretrained" if model_loaded else "unsupervised",
+                }
+                if anomalous:
+                    console.print(
+                        f"  [bold yellow]ML: {len(anomalous)}/{len(per_flow)} flows "
+                        f"flagged anomalous[/]"
+                    )
+                elif per_flow:
+                    console.print(f"  [dim]ML: analyzed {len(per_flow)} flows, no anomalies[/]")
+            else:
                 features = ext_ml.extract_from_pcap_metadata(result.pcap_metadata)
-                classifier = NetworkClassifier()
-                if args.ml_model and classifier.load_model(args.ml_model):
-                    ml_result = classifier.predict(features)
-                else:
-                    classifier.train([features], [0])
-                    ml_result = classifier.predict(features)
+                classifier.train([features], [0])
+                ml_result = classifier.predict(features)
                 if ml_result and ml_result.get("is_anomaly"):
-                    console.print(f"  [bold red]ML ANOMALY: score={ml_result.get('anomaly_score', 0):.2f}[/]")
-            except ImportError:
-                console.print("  [dim]ML libraries not installed[/]")
-            except Exception as exc:
-                log.debug("ML classification skipped: %s", exc)
-                console.print(f"  [dim]ML classification unavailable: {exc}[/]")
+                    console.print(
+                        f"  [bold red]ML ANOMALY: score={ml_result.get('anomaly_score', 0):.2f}[/]"
+                    )
+        except ImportError:
+            console.print("  [dim]ML libraries not installed[/]")
+        except Exception as exc:
+            log.debug("ML classification skipped: %s", exc)
+            console.print(f"  [dim]ML classification unavailable: {exc}[/]")
 
         # Stage 11: LLM Analysis
         llm_analysis = None
-        if args.llm:
+        if args.llm or config.LLM_ENABLED:
             log.info("=== Stage 8B: LLM Analysis ===")
             try:
                 from .analysis.llm_analyzer import SecurityLLMAnalyzer
@@ -319,15 +352,41 @@ def _run_analyze(args: argparse.Namespace) -> int:
             except Exception as exc:
                 console.print(f"  [dim]STIX failed: {exc}[/]")
 
-        if args.siem_url:
+        siem_urls = [args.siem_url] if args.siem_url else []
+        if not siem_urls and config.SIEM_ELASTICSEARCH_ENABLED:
+            siem_urls = config.SIEM_ELASTICSEARCH_HOSTS
+        if siem_urls:
             try:
                 from .integrations.siem_integration import ElasticsearchIntegration
-                es = ElasticsearchIntegration([args.siem_url])
+                es = ElasticsearchIntegration(siem_urls)
                 if es.connect():
                     indexed = es.push_analysis_result(result)
                     console.print(f"  [green]Pushed {indexed} alerts to ES[/]")
             except ImportError:
                 console.print("  [dim]elasticsearch not installed[/]")
+
+        # Splunk HEC push
+        splunk_url = args.siem_url if (args.siem_url and args.siem_token) else None
+        if not splunk_url and config.SIEM_SPLUNK_ENABLED and config.SIEM_SPLUNK_HEC_URL:
+            splunk_url = config.SIEM_SPLUNK_HEC_URL
+        if splunk_url:
+            try:
+                from .integrations.siem_integration import SplunkIntegration
+                token = args.siem_token or config.SIEM_SPLUNK_HEC_TOKEN
+                splunk = SplunkIntegration(
+                    hec_url=splunk_url, hec_token=token, source=config.SIEM_SPLUNK_SOURCE,
+                )
+                events = []
+                for alert in result.alerts:
+                    events.append({
+                        "id": getattr(alert, "alert_id", ""), "title": alert.title,
+                        "severity": alert.severity.value, "description": alert.description,
+                    })
+                events.append({"type": "analysis_complete", "packets": result.pcap_metadata.packet_count if result.pcap_metadata else 0})
+                sent = splunk.send_batch(events)
+                console.print(f"  [green]Splunk HEC: sent {sent} events[/]")
+            except ImportError:
+                console.print("  [dim]requests not installed[/]")
 
         # JSON report
         json_path = output_dir / "analysis_report.json"
@@ -366,7 +425,12 @@ def _run_analyze(args: argparse.Namespace) -> int:
     summary.add_row("Actors", str(len(result.threat_actors)))
     if yara_matches_all:
         summary.add_row("YARA Matches", str(len(yara_matches_all)))
-    if ml_result:
+    if isinstance(ml_result, dict) and "flows_analyzed" in ml_result:
+        summary.add_row(
+            "ML Analysis",
+            f"{ml_result['flows_analyzed']} flows | {ml_result['anomalous_flows']} anomalous",
+        )
+    elif ml_result and ml_result.get("class"):
         summary.add_row("ML Class", ml_result.get("class", "?"))
     if result.damage_assessment:
         summary.add_row("Damage", f"{result.damage_assessment.overall_score:.1f}/100")
@@ -407,6 +471,7 @@ def _run_live(args: argparse.Namespace) -> int:
         blocklist_path=args.blocklist,
         dry_run=args.dry_run,
         output_dir=output_dir,
+        yara_rules=args.yara_rules,
     )
 
     try:
@@ -427,11 +492,20 @@ def _run_live(args: argparse.Namespace) -> int:
 
     result = orch.get_result()
     render_terminal_report(result)
+    if args.pdf:
+        try:
+            from .reporting.pdf_report import PDFReportGenerator
+            PDFReportGenerator().generate(result, args.pdf, classification=config.DEFAULT_CLASSIFICATION)
+            console.print(f"  [green]PDF: {args.pdf}[/]")
+        except ImportError:
+            console.print("  [dim]PDF generation unavailable[/]")
+        except Exception as exc:
+            console.print(f"  [dim]PDF report failed: {exc}[/]")
     return 0
 
 
 def main() -> None:
-    setup_logging()
+    setup_logging(getattr(config, "LOG_LEVEL", logging.INFO))
     parser = build_parser()
     args = parser.parse_args()
 

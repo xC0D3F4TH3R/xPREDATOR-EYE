@@ -44,6 +44,7 @@ class Orchestrator:
         blocklist_path: Optional[Path] = None,
         dry_run: bool = True,
         output_dir: Optional[Path] = None,
+        yara_rules: Optional[Path] = None,
     ) -> None:
         self.interface = interface
         self.capture_filter = capture_filter
@@ -51,6 +52,7 @@ class Orchestrator:
         self.blocklist_path = blocklist_path
         self.dry_run = dry_run
         self.output_dir = output_dir or config.DEFAULT_OUTPUT_DIR
+        self.yara_rules = yara_rules
 
         self._result = AnalysisResult(analysis_start=datetime.now())
 
@@ -159,6 +161,21 @@ class Orchestrator:
             logger.error("Failed to init IntelligenceEngine: %s", exc)
 
         try:
+            from ..detection.yara_scanner import YaraScanner
+            self._yara_scanner = YaraScanner()
+            rules = self.yara_rules or (
+                config.PROJECT_ROOT / "detection" / "rules"
+            )
+            if rules.exists():
+                self._yara_scanner.load_rules(rules)
+                loaded = len(self._yara_scanner._rule_files)
+                logger.info("YaraScanner initialized (%d rule files)", loaded)
+            else:
+                logger.info("YaraScanner initialized (no rules)")
+        except Exception as exc:
+            logger.error("Failed to init YaraScanner: %s", exc)
+
+        try:
             from ..ui.dashboard import LiveDashboard
             self._dashboard = LiveDashboard()
             self._dashboard.start()
@@ -242,6 +259,24 @@ class Orchestrator:
                 self._file_monitor.clear_changes()
             if self._dashboard and changes:
                 self._dashboard.update_file_changes(changes)
+
+            # Live YARA scanning of newly observed files
+            if changes and getattr(self, "_yara_scanner", None) and self._alert_system:
+                for fc in changes:
+                    try:
+                        fp = Path(fc.path)
+                        if fp.is_file() and self._yara_scanner.scan_file(fp):
+                            self._alert_system.raise_alert(Alert(
+                                title=f"YARA match in {fp.name}",
+                                description=(
+                                    f"File matched live YARA rules "
+                                    f"(change type: {fc.change_type})"
+                                ),
+                                severity=Severity.HIGH,
+                            ))
+                            logger.warning("YARA match: %s (%s)", fp, fc.change_type)
+                    except Exception as exc:
+                        logger.debug("YARA live scan skipped: %s", exc)
 
         # Ingest process events (starts/exits/new connections)
         if self._process_monitor:
