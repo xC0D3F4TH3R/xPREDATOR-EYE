@@ -43,14 +43,16 @@ class ProcessMonitor:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._baseline: dict[int, ProcessSnapshot] = {}
+        self._latest_snapshot: dict[int, ProcessSnapshot] = {}
         self._events: list[SystemEvent] = []
+        self._lock = threading.Lock()
+        self._hash_cache: dict[tuple, tuple[str, str]] = {}
 
     def start(self) -> None:
         """Begin periodic process monitoring in a background thread."""
         if self._running:
             return
         self._running = True
-        self._take_baseline()
         self._thread = threading.Thread(
             target=self._monitor_loop, daemon=True, name="proc-monitor",
         )
@@ -101,16 +103,25 @@ class ProcessMonitor:
                 except (psutil.AccessDenied, psutil.NoSuchProcess):
                     pass
 
-                # Compute executable hash for known-path processes
+                # Compute executable hash for known-path processes (cached by mtime/size)
                 md5 = sha256 = ""
                 exe_path = info.get("exe") or ""
                 if exe_path and os.path.isfile(exe_path):
                     try:
-                        with open(exe_path, "rb") as fh:
-                            data = fh.read(8192)  # read first 8KB for speed
-                        hashes = compute_hashes(data)
-                        md5 = hashes["md5"]
-                        sha256 = hashes["sha256"]
+                        stat = os.stat(exe_path)
+                        cache_key = (exe_path, stat.st_size, stat.st_mtime)
+                        cached = self._hash_cache.get(cache_key)
+                        if cached:
+                            md5, sha256 = cached
+                        else:
+                            with open(exe_path, "rb") as fh:
+                                data = fh.read(8192)  # read first 8KB for speed
+                            hashes = compute_hashes(data)
+                            md5 = hashes["md5"]
+                            sha256 = hashes["sha256"]
+                            if len(self._hash_cache) >= config.PROCESS_HASH_CACHE_SIZE:
+                                self._hash_cache.clear()
+                            self._hash_cache[cache_key] = (md5, sha256)
                     except OSError:
                         pass
 
@@ -211,11 +222,22 @@ class ProcessMonitor:
 
     def _monitor_loop(self) -> None:
         """Background loop taking periodic snapshots and detecting changes."""
+        # Capture the baseline in the background so startup never blocks.
+        try:
+            self._baseline = self._snapshot_all()
+            logger.info("Baseline captured: %d processes", len(self._baseline))
+        except Exception as exc:
+            logger.error("Initial process baseline failed: %s", exc)
+
         while self._running:
             try:
                 current = self._snapshot_all()
                 diff = self._compute_diff(self._baseline, current)
-                self._snapshots.append(current)
+                with self._lock:
+                    self._latest_snapshot = current
+                    self._snapshots.append(current)
+                    if len(self._snapshots) > config.PROCESS_SNAPSHOT_HISTORY:
+                        del self._snapshots[: -config.PROCESS_SNAPSHOT_HISTORY]
                 self._emit_events(diff)
                 self._baseline = current
             except Exception as exc:
@@ -253,9 +275,10 @@ class ProcessMonitor:
 
     def _emit_events(self, diff: ProcessDiff) -> None:
         """Convert a diff into SystemEvent objects."""
+        new_events: list[SystemEvent] = []
         for proc in diff.new_processes:
             severity = Severity.HIGH if proc.suspicious_score > 0.5 else Severity.INFO
-            self._events.append(SystemEvent(
+            new_events.append(SystemEvent(
                 event_type="process_start",
                 severity=severity,
                 source="process_monitor",
@@ -274,7 +297,7 @@ class ProcessMonitor:
                 )
 
         for proc in diff.terminated_processes:
-            self._events.append(SystemEvent(
+            new_events.append(SystemEvent(
                 event_type="process_exit",
                 severity=Severity.INFO,
                 source="process_monitor",
@@ -283,7 +306,7 @@ class ProcessMonitor:
             ))
 
         for conn in diff.new_connections:
-            self._events.append(SystemEvent(
+            new_events.append(SystemEvent(
                 event_type="network_connect",
                 severity=Severity.LOW,
                 source="process_monitor",
@@ -291,9 +314,26 @@ class ProcessMonitor:
                 timestamp=datetime.now(),
             ))
 
+        with self._lock:
+            self._events.extend(new_events)
+            if len(self._events) > config.PROCESS_MAX_EVENTS:
+                del self._events[: len(self._events) - config.PROCESS_MAX_EVENTS]
+
     def get_snapshot(self) -> dict[int, ProcessSnapshot]:
         """Take and return an immediate snapshot."""
         return self._snapshot_all()
+
+    def get_latest_snapshot(self) -> dict[int, ProcessSnapshot]:
+        """Return the most recent snapshot captured by the monitor loop."""
+        with self._lock:
+            return dict(self._latest_snapshot)
+
+    def get_all_processes(self) -> list[ProcessSnapshot]:
+        """Return all processes from the latest snapshot as a list."""
+        with self._lock:
+            if self._latest_snapshot:
+                return list(self._latest_snapshot.values())
+        return list(self._snapshot_all().values())
 
     def get_diff(self) -> ProcessDiff:
         """Return the latest diff against baseline."""
@@ -302,12 +342,21 @@ class ProcessMonitor:
 
     def get_events(self, since: Optional[datetime] = None) -> list[SystemEvent]:
         """Return events, optionally filtered by timestamp."""
+        with self._lock:
+            events = list(self._events)
         if since:
-            return [e for e in self._events if e.timestamp and e.timestamp >= since]
-        return list(self._events)
+            return [e for e in events if e.timestamp and e.timestamp >= since]
+        return events
 
     def get_top_suspicious(self, limit: int = 10) -> list[ProcessSnapshot]:
         """Return the top N most suspicious processes from the latest snapshot."""
+        with self._lock:
+            if self._latest_snapshot:
+                ranked = sorted(
+                    self._latest_snapshot.values(),
+                    key=lambda p: p.suspicious_score, reverse=True,
+                )
+                return ranked[:limit]
         current = self._snapshot_all()
         ranked = sorted(current.values(), key=lambda p: p.suspicious_score, reverse=True)
         return ranked[:limit]

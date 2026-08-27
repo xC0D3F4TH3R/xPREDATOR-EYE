@@ -57,22 +57,30 @@ def build_parser() -> argparse.ArgumentParser:
     live_parser.add_argument("--interface", "-i", help="Network interface to capture on")
     live_parser.add_argument("--filter", "-f", default="", help="Capture filter (BPF syntax)")
     live_parser.add_argument("--output", "-o", type=Path, help="Output directory")
+    live_parser.add_argument("--duration", type=int, default=0,
+                             help="Stop capture after N seconds (0 = run until Ctrl+C)")
+    live_parser.add_argument("--interfaces", "-I", action="store_true",
+                             help="List available network interfaces and exit")
     live_parser.add_argument("--watch-paths", nargs="*", help="Directories to watch")
     live_parser.add_argument("--blocklist", type=Path, help="IOC blocklist JSON")
     live_parser.add_argument("--respond", action="store_true", help="Enable automated response")
     live_parser.add_argument("--dry-run", action="store_true", default=True, help="Dry-run responses")
     live_parser.add_argument("--quiet", action="store_true", help="Suppress output")
+    live_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     live_parser.add_argument("--yara-rules", type=Path, help="YARA rules path")
     live_parser.add_argument("--pdf", type=Path, help="PDF report on exit")
 
     # ── analyze mode ───────────────────────────────────────────────────
     analyze_parser = subparsers.add_parser("analyze", help="Static PCAP analysis")
     analyze_parser.add_argument("pcap_file", help="Path to PCAP/PCAPNG file")
-    analyze_parser.add_argument("--output", "-o", type=Path, help="Output directory")
-    analyze_parser.add_argument("--blocklist", type=Path, help="IOC blocklist JSON")
+    analyze_parser.add_argument("--output", "-o", dest="output_dir", help="Output directory")
+    analyze_parser.add_argument("--blocklist", "-b", help="IOC blocklist JSON")
+    analyze_parser.add_argument("--json-only", action="store_true", dest="json_only",
+                                help="Write JSON report without the terminal dashboard")
     analyze_parser.add_argument("--respond", action="store_true", help="Generate response plan")
     analyze_parser.add_argument("--respond-execute", action="store_true", help="Execute responses")
-    analyze_parser.add_argument("--quiet", action="store_true", help="Suppress output")
+    analyze_parser.add_argument("--quiet", "-q", action="store_true", help="Suppress output")
+    analyze_parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
     analyze_parser.add_argument("--yara-rules", type=Path, help="YARA rules path")
     analyze_parser.add_argument("--ml-model", type=Path, help="Pre-trained ML model")
     analyze_parser.add_argument("--pdf", type=Path, help="Generate PDF report")
@@ -110,7 +118,7 @@ def _run_analyze(args: argparse.Namespace) -> int:
         log = logging.getLogger("pcapanalyzer.quiet")
         log.setLevel(logging.WARNING)
 
-    output_dir = args.output or config.DEFAULT_OUTPUT_DIR
+    output_dir = Path(args.output_dir or config.DEFAULT_OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     result = AnalysisResult(analysis_start=datetime.now())
@@ -146,7 +154,7 @@ def _run_analyze(args: argparse.Namespace) -> int:
         log.info("=== Stage 4: Intelligence ===")
         intel = IntelligenceEngine()
         if args.blocklist:
-            intel.load_blocklist(args.blocklist)
+            intel.load_blocklist(Path(args.blocklist))
         else:
             intel.load_default_blocklists()
         result.ioc_matches = intel.full_analysis(
@@ -241,13 +249,16 @@ def _run_analyze(args: argparse.Namespace) -> int:
                 classifier = NetworkClassifier()
                 if args.ml_model and classifier.load_model(args.ml_model):
                     ml_result = classifier.predict(features)
-                    if ml_result.get("is_anomaly"):
-                        console.print(f"  [bold red]ML ANOMALY: score={ml_result.get('anomaly_score', 0):.2f}[/]")
                 else:
-                    classifier.fit([features], [0])
+                    classifier.train([features], [0])
                     ml_result = classifier.predict(features)
+                if ml_result and ml_result.get("is_anomaly"):
+                    console.print(f"  [bold red]ML ANOMALY: score={ml_result.get('anomaly_score', 0):.2f}[/]")
             except ImportError:
                 console.print("  [dim]ML libraries not installed[/]")
+            except Exception as exc:
+                log.debug("ML classification skipped: %s", exc)
+                console.print(f"  [dim]ML classification unavailable: {exc}[/]")
 
         # Stage 11: LLM Analysis
         llm_analysis = None
@@ -279,15 +290,16 @@ def _run_analyze(args: argparse.Namespace) -> int:
 
         # Stage 13: Reports
         log.info("=== Stage 10: Report Generation ===")
-        render_terminal_report(result)
+        if not args.json_only:
+            render_terminal_report(result)
 
         if args.pdf:
             try:
                 from .reporting.pdf_report import PDFReportGenerator
                 PDFReportGenerator().generate(result, args.pdf, classification=args.classification)
                 console.print(f"  [green]PDF: {args.pdf}[/]")
-            except ImportError:
-                console.print("  [dim]weasyprint not installed[/]")
+            except Exception as exc:
+                console.print(f"  [dim]PDF report failed: {exc}[/]")
 
         if args.html:
             try:
@@ -374,6 +386,15 @@ def _run_live(args: argparse.Namespace) -> int:
     console = Console()
     output_dir = args.output or config.DEFAULT_OUTPUT_DIR
 
+    if getattr(args, "interfaces", False):
+        from .capture.live_capture import LiveCaptureEngine
+        interfaces = LiveCaptureEngine().list_interfaces()
+        if not interfaces:
+            console.print("[yellow]No interfaces detected (check tshark)[/]")
+        for iface in interfaces:
+            console.print(iface)
+        return 0
+
     console.print(Panel.fit(
         f"[bold cyan]xPREDATOR-EYE[/] v{__version__} - Real-Time Threat Monitoring",
         border_style="cyan",
@@ -392,7 +413,12 @@ def _run_live(args: argparse.Namespace) -> int:
         orch.start()
         if not args.quiet:
             console.print("[green]Monitoring started. Ctrl+C to stop.[/]")
+        duration = getattr(args, "duration", 0) or 0
+        start_time = time.monotonic()
         while True:
+            if duration > 0 and (time.monotonic() - start_time) >= duration:
+                console.print(f"[green]Duration {duration}s elapsed, stopping.[/]")
+                break
             time.sleep(1)
     except KeyboardInterrupt:
         pass

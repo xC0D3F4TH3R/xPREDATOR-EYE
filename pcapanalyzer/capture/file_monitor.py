@@ -61,7 +61,6 @@ class FileMonitor:
             return
         if not self._watch_paths:
             self.load_platform_defaults()
-        self._take_baseline()
         self._running = True
         self._thread = threading.Thread(
             target=self._monitor_loop, daemon=True, name="file-monitor",
@@ -99,6 +98,12 @@ class FileMonitor:
         return {"size": stat.st_size, "mtime": stat.st_mtime, "ctime": stat.st_ctime}
 
     def _monitor_loop(self) -> None:
+        # Capture the baseline in the background so startup never blocks.
+        try:
+            self._take_baseline()
+        except Exception as exc:
+            logger.error("Initial file baseline failed: %s", exc)
+
         while self._running:
             try:
                 self._scan_for_changes()
@@ -192,9 +197,11 @@ class FileMonitor:
             return list(self._changes)
 
     def get_events(self, since: Optional[datetime] = None) -> list[SystemEvent]:
+        with self._lock:
+            events = list(self._events)
         if since:
-            return [e for e in self._events if e.timestamp and e.timestamp >= since]
-        return list(self._events)
+            return [e for e in events if e.timestamp and e.timestamp >= since]
+        return events
 
     def clear_changes(self) -> None:
         with self._lock:

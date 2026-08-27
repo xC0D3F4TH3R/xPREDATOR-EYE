@@ -64,10 +64,16 @@ class NetworkClassifier:
         if not ML_AVAILABLE:
             return {"error": "ML libraries not installed"}
 
-        X_array = np.array(X)
-        y_array = np.array(y)
+        X_array = np.asarray(X, dtype=float)
+        y_array = np.asarray(y)
 
-        X_scaled = self._scaler.fit_transform(X_array)
+        if X_array.size == 0 or X_array.ndim == 0:
+            return {"error": "empty training data"}
+
+        with np.errstate(divide="ignore", invalid="ignore"):
+            X_scaled = self._scaler.fit_transform(X_array)
+        X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
+
         self._classifier.fit(X_scaled, y_array)
         self._anomaly_detector.fit(X_scaled)
 
@@ -78,8 +84,8 @@ class NetworkClassifier:
 
         return {
             "accuracy": float(train_score),
-            "n_samples": len(X),
-            "n_features": X_array.shape[1],
+            "n_samples": int(X_array.shape[0]),
+            "n_features": int(X_array.shape[1]),
             "feature_importances": importances.tolist(),
             "classes": [TRAFFIC_CLASSES.get(i, f"class_{i}") for i in self._classifier.classes_],
         }
@@ -89,47 +95,59 @@ class NetworkClassifier:
         if not ML_AVAILABLE or not self._is_trained:
             return {"class": "unknown", "confidence": 0.0, "anomaly_score": 0.0}
 
-        X = np.array([features])
-        X_scaled = self._scaler.transform(X)
+        try:
+            X = np.asarray([features], dtype=float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                X_scaled = self._scaler.transform(X)
+            X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
 
-        prediction = self._classifier.predict(X_scaled)[0]
-        probabilities = self._classifier.predict_proba(X_scaled)[0]
-        anomaly_score = self._anomaly_detector.decision_function(X_scaled)[0]
+            prediction = self._classifier.predict(X_scaled)[0]
+            probabilities = self._classifier.predict_proba(X_scaled)[0]
+            anomaly_score = self._anomaly_detector.decision_function(X_scaled)[0]
 
-        return {
-            "class": TRAFFIC_CLASSES.get(int(prediction), f"class_{prediction}"),
-            "class_id": int(prediction),
-            "confidence": float(max(probabilities)),
-            "probabilities": {
-                TRAFFIC_CLASSES.get(i, f"class_{i}"): float(p)
-                for i, p in enumerate(probabilities)
-            },
-            "anomaly_score": float(-anomaly_score),
-            "is_anomaly": bool(anomaly_score < -0.5),
-        }
+            return {
+                "class": TRAFFIC_CLASSES.get(int(prediction), f"class_{prediction}"),
+                "class_id": int(prediction),
+                "confidence": float(max(probabilities)),
+                "probabilities": {
+                    TRAFFIC_CLASSES.get(i, f"class_{i}"): float(p)
+                    for i, p in enumerate(probabilities)
+                },
+                "anomaly_score": float(-anomaly_score),
+                "is_anomaly": bool(anomaly_score < -0.5),
+            }
+        except Exception as exc:
+            logger.error("ML prediction failed: %s", exc)
+            return {"class": "unknown", "confidence": 0.0, "anomaly_score": 0.0, "is_anomaly": False}
 
     def predict_batch(self, X: list[list[float]]) -> list[dict]:
         """Predict traffic class for multiple flow feature vectors."""
         if not ML_AVAILABLE or not self._is_trained:
             return [{"class": "unknown", "confidence": 0.0} for _ in X]
 
-        X_array = np.array(X)
-        X_scaled = self._scaler.transform(X_array)
+        try:
+            X_array = np.asarray(X, dtype=float)
+            with np.errstate(divide="ignore", invalid="ignore"):
+                X_scaled = self._scaler.transform(X_array)
+            X_scaled = np.nan_to_num(X_scaled, nan=0.0, posinf=0.0, neginf=0.0)
 
-        predictions = self._classifier.predict(X_scaled)
-        probabilities = self._classifier.predict_proba(X_scaled)
-        anomaly_scores = self._anomaly_detector.decision_function(X_scaled)
+            predictions = self._classifier.predict(X_scaled)
+            probabilities = self._classifier.predict_proba(X_scaled)
+            anomaly_scores = self._anomaly_detector.decision_function(X_scaled)
 
-        results = []
-        for i, pred in enumerate(predictions):
-            results.append({
-                "class": TRAFFIC_CLASSES.get(int(pred), f"class_{pred}"),
-                "class_id": int(pred),
-                "confidence": float(max(probabilities[i])),
-                "anomaly_score": float(-anomaly_scores[i]),
-                "is_anomaly": bool(anomaly_scores[i] < -0.5),
-            })
-        return results
+            results = []
+            for i, pred in enumerate(predictions):
+                results.append({
+                    "class": TRAFFIC_CLASSES.get(int(pred), f"class_{pred}"),
+                    "class_id": int(pred),
+                    "confidence": float(max(probabilities[i])),
+                    "anomaly_score": float(-anomaly_scores[i]),
+                    "is_anomaly": bool(anomaly_scores[i] < -0.5),
+                })
+            return results
+        except Exception as exc:
+            logger.error("ML batch prediction failed: %s", exc)
+            return [{"class": "unknown", "confidence": 0.0} for _ in X]
 
     def save_model(self, path: str | Path) -> None:
         """Save trained model to disk."""

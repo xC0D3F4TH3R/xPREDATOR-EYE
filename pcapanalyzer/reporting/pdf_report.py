@@ -21,7 +21,7 @@ try:
     from weasyprint import HTML
     from jinja2 import Template
     PDF_AVAILABLE = True
-except ImportError as exc:
+except Exception as exc:
     PDF_AVAILABLE = False
     HTML = None  # type: ignore[assignment]
     Template = None  # type: ignore[assignment]

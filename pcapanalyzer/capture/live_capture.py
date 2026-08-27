@@ -59,6 +59,7 @@ class LiveCaptureEngine:
         self._lock = threading.Lock()
         self._packet_count = 0
         self._capture_thread: Optional[threading.Thread] = None
+        self._stderr_thread: Optional[threading.Thread] = None
 
     def _find_interface(self) -> str:
         """Auto-detect the default network interface via tshark."""
@@ -123,8 +124,7 @@ class LiveCaptureEngine:
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
+                bufsize=0,
             )
         except FileNotFoundError:
             raise CaptureError(
@@ -139,7 +139,23 @@ class LiveCaptureEngine:
             target=self._read_packets, daemon=True, name="capture-reader",
         )
         self._capture_thread.start()
+        self._stderr_thread = threading.Thread(
+            target=self._drain_stderr, daemon=True, name="capture-stderr",
+        )
+        self._stderr_thread.start()
         logger.info("Live capture started on interface %s", self.interface or "auto")
+
+    def _drain_stderr(self) -> None:
+        """Drain tshark stderr to avoid pipe-full deadlock and log diagnostics."""
+        if not self._process or not self._process.stderr:
+            return
+        try:
+            for raw in self._process.stderr:
+                text = raw.decode("utf-8", errors="replace").strip()
+                if text:
+                    logger.debug("tshark: %s", text)
+        except Exception:
+            pass
 
     def _read_packets(self) -> None:
         """Read tshark output line-by-line and parse into LivePacket objects."""
@@ -244,6 +260,8 @@ class LiveCaptureEngine:
             self._process = None
         if self._capture_thread and self._capture_thread.is_alive():
             self._capture_thread.join(timeout=3)
+        if self._stderr_thread and self._stderr_thread.is_alive():
+            self._stderr_thread.join(timeout=3)
         logger.info("Capture stopped. Total packets: %d", self._packet_count)
         return self._packet_count
 

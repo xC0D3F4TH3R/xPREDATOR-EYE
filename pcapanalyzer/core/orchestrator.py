@@ -81,6 +81,7 @@ class Orchestrator:
 
         self._running = False
         self._analysis_thread: Optional[threading.Thread] = None
+        self._last_process_event_time: Optional[datetime] = None
 
     def _init_engines(self) -> None:
         """Initialize all sub-engines with safe error handling."""
@@ -237,17 +238,27 @@ class Orchestrator:
             changes = self._file_monitor.get_changes()
             for fc in changes:
                 self._behavior_engine.ingest_file_change(fc)
+            if changes:
+                self._file_monitor.clear_changes()
             if self._dashboard and changes:
                 self._dashboard.update_file_changes(changes)
 
-        # Ingest process snapshots
+        # Ingest process events (starts/exits/new connections)
         if self._process_monitor:
-            snapshot = self._process_monitor.get_latest_snapshot()
-            if snapshot:
-                self._behavior_engine.ingest_process_snapshot(snapshot)
+            proc_events = self._process_monitor.get_events(since=self._last_process_event_time)
+            for sev in proc_events:
+                self._behavior_engine.ingest_system_event(sev)
+            if proc_events:
+                self._last_process_event_time = datetime.now()
+
+            # Update dashboard with top suspicious processes from latest snapshot
+            if self._dashboard:
                 procs = self._process_monitor.get_all_processes()
-                if self._dashboard and procs:
-                    self._dashboard.update_processes(procs)
+                if procs:
+                    ranked = sorted(
+                        procs, key=lambda p: p.suspicious_score, reverse=True,
+                    )
+                    self._dashboard.update_processes(ranked[:20])
 
         self._monitor_session.event_count = self._behavior_engine.event_count
 
@@ -336,14 +347,15 @@ class Orchestrator:
             )
 
         # Write final report
+        self._result.elapsed_seconds = (
+            datetime.now() - self._result.analysis_start
+        ).total_seconds() if self._result.analysis_start else 0.0
         self._write_report()
 
-        elapsed = (datetime.now() - self._result.analysis_start).total_seconds() if self._result.analysis_start else 0.0
-        self._result.elapsed_seconds = elapsed
         self._monitor_session.active = False
 
         logger.info("=== Orchestrator stopped (elapsed=%.1fs, packets=%d, alerts=%d) ===",
-                     elapsed, pkt_count, self._monitor_session.alert_count)
+                     self._result.elapsed_seconds, pkt_count, self._monitor_session.alert_count)
 
     def _write_report(self) -> None:
         """Write the final JSON report."""

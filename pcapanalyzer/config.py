@@ -131,6 +131,9 @@ PROCESS_POLL_INTERVAL: float = 2.0  # seconds between snapshots
 PROCESS_CPU_SUSPICIOUS: float = 90.0  # percent
 PROCESS_MEMORY_SUSPICIOUS_MB: int = 1024
 PROCESS_THREAD_SUSPICIOUS: int = 500
+PROCESS_SNAPSHOT_HISTORY: int = 500  # snapshots (dicts) kept in memory
+PROCESS_MAX_EVENTS: int = 10000  # system events kept in memory
+PROCESS_HASH_CACHE_SIZE: int = 4096  # max cached executable hashes
 
 # Known benign executables by name (lowercase) - reduce false positives
 KNOWN_BENIGN_PROCESSES: set[str] = {

@@ -184,6 +184,19 @@ class ResponseEngine:
                 tags=["c2", "network", "containment"],
             ),
             Playbook(
+                name="Lateral Movement Containment",
+                description="Contain lateral movement and internal propagation",
+                trigger_conditions=["lateral", "movement", "lateral_movement", "propagation", "psexec"],
+                severity_threshold=Severity.MEDIUM,
+                commands=[
+                    self._make_cmd(ResponseAction.ISOLATE_HOST, "Isolate compromised host"),
+                    self._make_cmd(ResponseAction.CAPTURE_FORENSICS, "Capture forensic evidence"),
+                    self._make_cmd(ResponseAction.NOTIFY_ADMIN, "Notify security team"),
+                    self._make_cmd(ResponseAction.GENERATE_REPORT, "Generate incident report"),
+                ],
+                tags=["lateral_movement", "containment"],
+            ),
+            Playbook(
                 name="Credential Theft Response",
                 description="Respond to credential harvesting activity",
                 trigger_conditions=["credential_access", "credential_dumping", "mimikatz"],
@@ -265,6 +278,7 @@ class ResponseEngine:
         # Process alerts
         for alert in alerts:
             if alert.severity in (Severity.CRITICAL, Severity.HIGH):
+                had_action = False
                 # Block IPs from high/critical alerts
                 if alert.src_ip and alert.src_ip not in (blocked_ips or []):
                     plan.commands.append(self._make_cmd(
@@ -272,11 +286,22 @@ class ResponseEngine:
                         f"Block source IP from alert: {alert.title}",
                         alert.src_ip,
                     ))
+                    had_action = True
                 if alert.dst_ip and alert.dst_ip not in (blocked_ips or []):
                     plan.commands.append(self._make_cmd(
                         ResponseAction.BLOCK_IP,
                         f"Block destination IP from alert: {alert.title}",
                         alert.dst_ip,
+                    ))
+                    had_action = True
+                if not had_action:
+                    plan.commands.append(self._make_cmd(
+                        ResponseAction.NOTIFY_ADMIN,
+                        f"High-severity alert requires review: {alert.title}",
+                    ))
+                    plan.commands.append(self._make_cmd(
+                        ResponseAction.GENERATE_REPORT,
+                        f"Generate report for alert: {alert.title}",
                     ))
 
         # Check for matching playbooks
